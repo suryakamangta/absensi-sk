@@ -1,0 +1,47 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'id.co.suryakamangta.absensi'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'id.co.suryakamangta.absensi'
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('SK_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('SK_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('SK_KEY_ALIAS')
+                keyPassword System.getenv('SK_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv('SK_KEYSTORE_FILE') ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    buildFeatures { buildConfig true }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // Web app (../web/index.html) ikut dibundel sebagai assets/index.html
+    sourceSets {
+        main { assets.srcDirs = ['src/main/assets', '../../web'] }
+    }
+}

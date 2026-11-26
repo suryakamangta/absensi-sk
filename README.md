@@ -36,7 +36,7 @@ Notion HRIS: Karyawan · Absensi · Cuti   (+ OneDrive: LAMPIRAN IZIN ABSENSI)
    - `SK_KEYSTORE_B64` = isi file `sk-release.jks.b64`
    - `SK_KEYSTORE_PASSWORD`, `SK_KEY_PASSWORD`, `SK_KEY_ALIAS` = dari `keystore-info.txt`
 3. Push ke branch `main`. Workflow **Build APK Absensi SK** membuat `AbsensiSK.apk` di *Releases → latest*.
-4. (Opsional) *Settings → Pages → Source: GitHub Actions* → web absensi tampil di `https://<akun>.github.io/<repo>/` untuk dipakai dari browser / iPhone.
+4. Web absensi di-hosting di **https://suryakamangta.co.id/absensi-sk/** (cPanel → File Manager → `public_html/absensi-sk/index.html`). APK membuka alamat ini, dan otomatis memakai salinan bawaan APK kalau alamat itu tidak bisa dibuka. Mengubah tampilan cukup dengan mengganti `index.html` di cPanel.
 
 > Simpan `sk-release.jks` dan password-nya baik-baik. Update APK harus ditandatangani dengan keystore yang sama, kalau tidak HP karyawan harus uninstall dulu.
 

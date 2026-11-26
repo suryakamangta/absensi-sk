@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f2a4a">
+<title>Absensi Surya Kamangta</title>
+<style>
+:root{--navy:#0f2a4a;--navy2:#173d69;--gold:#f2a516;--bg:#eef2f7;--card:#fff;--ink:#16202c;--mut:#6b7787;--ok:#1a9b5c;--bad:#d33c3c;--warn:#d98a00;--line:#e2e8f0}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+header{background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:14px 16px 56px;position:relative}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:38px;height:38px;border-radius:10px;background:#fff;color:var(--navy);display:grid;place-items:center;font-weight:800;letter-spacing:-.5px;font-size:15px;box-shadow:inset 0 -3px 0 var(--gold)}
+.brand b{display:block;font-size:15px}.brand small{opacity:.75;font-size:12px}
+.who{margin-top:14px;display:flex;justify-content:space-between;align-items:flex-end}
+.who .nm{font-size:18px;font-weight:700}.who .jb{font-size:12px;opacity:.75}
+.linkbtn{background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
+main{padding:0 14px 90px;margin-top:-42px;position:relative}
+.card{background:var(--card);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(15,42,74,.08);margin-bottom:12px}
+.clock{text-align:center}
+.clock .t{font-size:42px;font-weight:800;letter-spacing:1px;font-variant-numeric:tabular-nums;color:var(--navy)}
+.clock .d{color:var(--mut);font-size:13px}
+.today{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.today div{background:var(--bg);border-radius:12px;padding:10px;text-align:center}
+.today small{display:block;color:var(--mut);font-size:12px}
+.today b{font-size:20px;font-variant-numeric:tabular-nums}
+.note{margin-top:10px;font-size:13px;text-align:center;color:var(--mut)}
+.loc{display:flex;gap:12px;align-items:flex-start}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:5px;flex:none;background:#b8c2cf}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 4px rgba(26,155,92,.18)}
+.dot.bad{background:var(--bad);box-shadow:0 0 0 4px rgba(211,60,60,.15)}
+.dot.wait{background:var(--warn);animation:p 1s infinite alternate}
+@keyframes p{to{opacity:.3}}
+.loc .ti{font-weight:700}.loc .sub{color:var(--mut);font-size:13px}
+.loc a{color:var(--navy2);font-size:13px}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big{border:0;border-radius:14px;padding:18px 8px;font-weight:800;font-size:16px;color:#fff;display:flex;flex-direction:column;align-items:center;gap:4px}
+.big small{font-weight:500;font-size:12px;opacity:.85}
+.big.in{background:linear-gradient(135deg,#1a9b5c,#147a48)}
+.big.out{background:linear-gradient(135deg,#e07b00,#c25f00)}
+.big:disabled{opacity:.45}
+.btn{width:100%;border:0;border-radius:12px;padding:13px;background:var(--navy);color:#fff;font-weight:700}
+.btn.ghost{background:var(--bg);color:var(--navy)}
+.btn:disabled{opacity:.5}
+label{display:block;font-size:13px;color:var(--mut);margin:12px 0 5px}
+input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+textarea{min-height:80px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+h3{margin:2px 0 8px;font-size:16px}
+.list .it{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);gap:10px}
+.list .it:last-child{border-bottom:0}
+.it .l b{display:block}.it .l small{color:var(--mut);font-size:12px}
+.it .r{text-align:right;font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px;background:var(--bg);color:var(--mut);margin-left:4px}
+.tag.ok{background:#e3f5ec;color:var(--ok)}.tag.bad{background:#fbe7e7;color:var(--bad)}.tag.warn{background:#fff3dc;color:#a36700}.tag.blue{background:#e5eefb;color:var(--navy2)}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
+.sum div{background:var(--bg);border-radius:10px;padding:8px;text-align:center}.sum b{display:block;font-size:20px}.sum small{color:var(--mut);font-size:11px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+nav button{flex:1;border:0;background:none;color:var(--mut);font-size:11px;padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--navy);font-weight:700}
+.empty{color:var(--mut);text-align:center;padding:18px 0;font-size:14px}
+#toast{position:fixed;left:16px;right:16px;bottom:84px;background:var(--ink);color:#fff;padding:13px 16px;border-radius:12px;font-size:14px;z-index:50;transform:translateY(30px);opacity:0;transition:.25s;pointer-events:none}
+#toast.show{transform:none;opacity:1}#toast.ok{background:var(--ok)}#toast.err{background:var(--bad)}
+.sheet{position:fixed;inset:0;background:rgba(10,20,35,.5);z-index:40;display:flex;align-items:flex-end}
+.sheet .box{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+.sheet p{margin:4px 0 10px;color:var(--mut);font-size:14px}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;vertical-align:-3px}
+@keyframes s{to{transform:rotate(360deg)}}
+#login main{margin-top:-30px}
+.pinrow{letter-spacing:10px;text-align:center;font-size:22px;font-weight:700}
+.foot{text-align:center;color:var(--mut);font-size:11px;margin-top:14px}
+.err{color:var(--bad);font-size:13px;margin-top:8px;min-height:18px}
+@media(min-width:600px){section{max-width:520px;margin:0 auto;box-shadow:0 0 0 1px var(--line)}nav,.sheet .box{max-width:520px;margin:0 auto}nav{left:50%;transform:translateX(-50%);width:100%}#toast{max-width:488px;margin:0 auto}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<section id="login" class="hidden">
+  <header>
+    <div class="brand"><div class="logo">SK</div><div><b>Absensi Karyawan</b><small>PT. Surya Kamangta</small></div></div>
+  </header>
+  <main>
+    <div class="card">
+      <h3>Masuk</h3>
+      <label for="selNama">Nama karyawan</label>
+      <select id="selNama"><option value="">Memuat daftar…</option></select>
+      <label for="inPin">PIN absen (4 digit)</label>
+      <input id="inPin" class="pinrow" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••">
+      <div class="err" id="loginErr"></div>
+      <button class="btn" id="btnLogin">Masuk</button>
+      <div class="foot">Lupa PIN? Hubungi HRD / admin.</div>
+    </div>
+  </main>
+</section>
+
+<!-- APP -->
+<section id="app" class="hidden">
+  <header>
+    <div class="brand"><div class="logo">SK</div><div><b>Absensi Karyawan</b><small>PT. Surya Kamangta</small></div></div>
+    <div class="who"><div><div class="nm" id="uNama">-</div><div class="jb" id="uJab"></div></div><button class="linkbtn" id="btnLogout">Keluar</button></div>
+  </header>
+  <main>
+    <!-- HOME -->
+    <div id="tab-home">
+      <div class="card clock">
+        <div class="t" id="clk">--:--:--</div>
+        <div class="d" id="tgl">-</div>
+        <div class="today">
+          <div><small>Masuk</small><b id="tMasuk">--:--</b></div>
+          <div><small>Pulang</small><b id="tPulang">--:--</b></div>
+        </div>
+        <div class="note" id="tNote">Jam masuk kantor 08:00</div>
+      </div>
+      <div class="card">
+        <div class="loc">
+          <div class="dot wait" id="locDot"></div>
+          <div style="flex:1">
+            <div class="ti" id="locTi">Mencari lokasi…</div>
+            <div class="sub" id="locSub">Pastikan GPS / Lokasi HP menyala</div>
+          </div>
+          <button class="linkbtn" style="background:var(--bg);color:var(--navy)" id="btnRefresh">Perbarui</button>
+        </div>
+      </div>
+      <div class="acts">
+        <button class="big in" id="btnMasuk">ABSEN MASUK<small>Datang</small></button>
+        <button class="big out" id="btnPulang">ABSEN PULANG<small>Pulang</small></button>
+      </div>
+      <div class="foot">Radius absen: <span id="radInfo"></span></div>
+    </div>
+
+    <!-- RIWAYAT -->
+    <div id="tab-riwayat" class="hidden">
+      <div class="card"><h3>Riwayat absensi</h3><div class="list" id="riwList"><div class="empty">Memuat…</div></div></div>
+    </div>
+
+    <!-- IZIN -->
+    <div id="tab-izin" class="hidden">
+      <div class="card">
+        <h3>Pengajuan izin / sakit / cuti</h3>
+        <label for="izJenis">Jenis</label>
+        <select id="izJenis">
+          <option>Izin</option><option>Sakit (Surat Dokter)</option><option>Cuti Tahunan</option><option>Cuti Sakit</option>
+          <option>Cuti Menikah</option><option>Cuti Melahirkan</option><option>Cuti Duka</option><option>Cuti Tanpa Gaji</option>
+        </select>
+        <div class="row2">
+          <div><label for="izMulai">Dari tanggal</label><input type="date" id="izMulai"></div>
+          <div><label for="izSelesai">Sampai (opsional)</label><input type="date" id="izSelesai"></div>
+        </div>
+        <label for="izAlasan">Alasan</label>
+        <textarea id="izAlasan" maxlength="300" placeholder="Tulis alasan singkat"></textarea>
+        <label for="izFile">Lampiran (foto / PDF, opsional)</label>
+        <input type="file" id="izFile" accept="image/*,application/pdf">
+        <div class="err" id="izErr"></div>
+        <button class="btn" id="btnIzin">Kirim pengajuan</button>
+        <div class="foot">Pengajuan masuk ke HRIS dengan status "Diajukan" dan menunggu persetujuan atasan/HRD.</div>
+      </div>
+    </div>
+
+    <!-- REKAP -->
+    <div id="tab-rekap" class="hidden">
+      <div class="card">
+        <h3>Rekap kehadiran</h3>
+        <input type="date" id="rkTgl">
+        <div style="height:10px"></div>
+        <div class="sum"><div><b id="rkHadir">-</b><small>Hadir</small></div><div><b id="rkTelat">-</b><small>Terlambat</small></div><div><b id="rkBelum">-</b><small>Belum absen</small></div></div>
+        <div class="list" id="rkList"><div class="empty">Memuat…</div></div>
+      </div>
+    </div>
+  </main>
+  <nav>
+    <button data-tab="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Absen</button>
+    <button data-tab="riwayat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Riwayat</button>
+    <button data-tab="izin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Izin</button>
+    <button data-tab="rekap" id="navRekap" class="hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Rekap</button>
+  </nav>
+</section>
+
+<!-- Sheet keterangan luar radius -->
+<div class="sheet hidden" id="sheet">
+  <div class="box">
+    <h3 id="shTitle">Di luar radius kantor</h3>
+    <p id="shText"></p>
+    <label for="shKet">Keterangan (wajib)</label>
+    <textarea id="shKet" maxlength="150" placeholder="Contoh: dinas ke pelabuhan / meeting di klien"></textarea>
+    <div class="err" id="shErr"></div>
+    <div class="row2"><button class="btn ghost" id="shBatal">Batal</button><button class="btn" id="shKirim">Kirim absen</button></div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const CFG = {
+  HOOK: 'https://hook.eu2.make.com/ncwocny7717835clcn7u4i9t5r0qjbv1',
+  OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 20 } ],
+  JAM_MASUK: '08:00',
+  VERSION: '1.0.0'
+};
+const $ = id => document.getElementById(id);
+const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
+const store = {
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const clean = s => String(s||'').replace(/["\\{}|\r\n\t<>]/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
+const pad = n => String(n).padStart(2,'0');
+const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+const BLN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+const ymd = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+function fmtTgl(s){ const [y,m,d]=s.split('-').map(Number); const dt=new Date(y,m-1,d); return HARI[dt.getDay()].slice(0,3)+', '+d+' '+BLN[m-1]+' '+y; }
+
+function toast(msg, type){ const t=$('toast'); t.textContent=msg; t.className='show '+(type||''); clearTimeout(t._h); t._h=setTimeout(()=>t.className='',4000); }
+
+async function api(params){
+  const ctl = new AbortController(); const to = setTimeout(()=>ctl.abort(), 45000);
+  try{
+    const r = await fetch(CFG.HOOK, { method:'POST', body:new URLSearchParams(params), signal:ctl.signal });
+    const txt = await r.text();
+    try { return JSON.parse(txt.replace(/}\s*{/g,'},{')); }
+    catch(e){ throw new Error(r.status>=500 ? 'Server sedang bermasalah, coba lagi.' : 'Respons server tidak dikenal.'); }
+  } catch(e){
+    if (e.name==='AbortError') throw new Error('Koneksi lambat / terputus. Coba lagi.');
+    if (e instanceof TypeError) throw new Error('Tidak ada koneksi internet.');
+    throw e;
+  } finally { clearTimeout(to); }
+}
+
+/* ---------- Lokasi ---------- */
+function haversine(a,b,c,d){ const R=6371000, r=x=>x*Math.PI/180; const dl=r(c-a), dg=r(d-b);
+  const h=Math.sin(dl/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dg/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+function nearest(lat,lng){ let best=null; for(const o of CFG.OFFICES){ const d=haversine(lat,lng,o.lat,o.lng); if(!best||d<best.d) best={o,d}; } return best; }
+
+function getLoc(){
+  return new Promise((resolve,reject)=>{
+    if (window.SKNative && SKNative.getLocation){
+      window.__skLoc = (res)=>{ try{ const j = typeof res==='string'?JSON.parse(res):res; if(j.error) reject(new Error(j.error)); else resolve(j); }catch(e){ reject(e); } };
+      try { SKNative.getLocation('__skLoc'); } catch(e){ reject(e); }
+      return;
+    }
+    if (!navigator.geolocation) return reject(new Error('Perangkat tidak mendukung GPS.'));
+    navigator.geolocation.getCurrentPosition(
+      p=>resolve({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy,mock:false}),
+      e=>reject(new Error(e.code===1?'Izin lokasi ditolak. Izinkan akses lokasi untuk aplikasi/browser ini.':e.code===3?'Lokasi tidak terdeteksi (timeout). Pastikan GPS menyala lalu coba lagi.':'Lokasi tidak terdeteksi. Pastikan GPS menyala.')),
+      {enableHighAccuracy:true, timeout:20000, maximumAge:0});
+  });
+}
+async function refreshLoc(){
+  const dot=$('locDot'); dot.className='dot wait'; $('locTi').textContent='Mencari lokasi…'; $('locSub').textContent='Pastikan GPS / Lokasi HP menyala';
+  try{
+    const L = await getLoc();
+    const n = nearest(L.lat, L.lng);
+    S.loc = { ...L, office:n.o, dist:Math.round(n.d), inside: n.d <= n.o.r };
+    S.locAt = Date.now();
+    renderLoc();
+    return S.loc;
+  }catch(e){
+    S.loc=null; dot.className='dot bad'; $('locTi').textContent='Lokasi belum didapat'; $('locSub').textContent=e.message; throw e;
+  }
+}
+function renderLoc(){
+  const L=S.loc; if(!L) return;
+  const dot=$('locDot');
+  const map = `<a href="https://www.google.com/maps?q=${L.lat},${L.lng}" target="_blank">peta</a>`;
+  if (L.mock){ dot.className='dot bad'; $('locTi').textContent='Lokasi palsu terdeteksi'; $('locSub').textContent='Matikan aplikasi Fake GPS / mock location.'; return; }
+  if (L.inside){ dot.className='dot ok'; $('locTi').textContent='Di area '+L.office.name; }
+  else { dot.className='dot bad'; $('locTi').textContent='Di luar radius kantor'; }
+  $('locSub').innerHTML = `${L.dist} m dari ${L.office.name} · akurasi ±${Math.round(L.acc)} m · ${map}` + (L.acc>30?'<br>Sinyal GPS lemah — tunggu sebentar lalu tekan Perbarui.':'');
+}
+
+/* ---------- Absen ---------- */
+async function doAbsen(tipe){
+  if (S.busy) return;
+  const btn = tipe==='masuk'?$('btnMasuk'):$('btnPulang'); const orig = btn.innerHTML;
+  S.busy=true; btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    if (!S.loc || Date.now()-S.locAt > 60000) await refreshLoc();
+    const L=S.loc;
+    if (L.mock) throw new Error('Lokasi palsu terdeteksi. Absen ditolak.');
+    let ket='';
+    if (!L.inside){
+      ket = await askKet(tipe, L);
+      if (ket===null) return;
+    }
+    const p = { action:'absen', id:S.user.id, pin:S.user.pin, tipe,
+      lat:L.lat.toFixed(7), lng:L.lng.toFixed(7), acc:Math.round(L.acc), jarak:L.dist,
+      lk: L.inside ? L.office.name : 'Di Luar Kantor',
+      lok: L.inside ? L.office.name : 'DI LUAR RADIUS KANTOR',
+      ket: clean(ket) };
+    const r = await api(p);
+    if (!r.ok) throw new Error(r.msg||'Absen gagal.');
+    toast(r.msg, 'ok');
+    if (tipe==='masuk' && $('tMasuk').textContent==='--:--') $('tMasuk').textContent=r.jam;
+    if (tipe==='pulang') $('tPulang').textContent=r.jam;
+    loadRiwayat(true);
+  }catch(e){ toast(e.message,'err'); }
+  finally{ S.busy=false; btn.disabled=false; btn.innerHTML=orig; }
+}
+function askKet(tipe, L){
+  return new Promise(res=>{
+    $('shTitle').textContent='Absen '+tipe+' di luar radius';
+    $('shText').textContent=`Posisi Anda ${L.dist} m dari ${L.office.name} (radius ${L.office.r} m). Absen tetap bisa dikirim, tetapi ditandai "DI LUAR RADIUS KANTOR".`;
+    $('shKet').value=''; $('shErr').textContent=''; $('sheet').classList.remove('hidden');
+    const done=v=>{ $('sheet').classList.add('hidden'); $('shKirim').onclick=$('shBatal').onclick=null; res(v); };
+    $('shBatal').onclick=()=>done(null);
+    $('shKirim').onclick=()=>{ const v=clean($('shKet').value); if(v.length<5){ $('shErr').textContent='Isi keterangan (min. 5 huruf).'; return; } done(v); };
+  });
+}
+
+/* ---------- Riwayat ---------- */
+function renderToday(rows, today){
+  const t = rows.find(r=>r.t===today);
+  $('tMasuk').textContent = (t&&t.m)||'--:--';
+  $('tPulang').textContent = (t&&t.k)||'--:--';
+  let note='Jam masuk kantor '+CFG.JAM_MASUK;
+  if (t && t.m){ const tl=+t.tl||0; note = tl>0 ? `Terlambat ${tl} menit` : 'Tepat waktu 👍'; if(t.l && /LUAR/i.test(t.l)) note+=' · di luar radius'; }
+  else if (t && t.s && t.s!=='Hadir') note='Status hari ini: '+t.s;
+  $('tNote').textContent=note;
+}
+async function loadRiwayat(silent){
+  if(!silent) $('riwList').innerHTML='<div class="empty">Memuat…</div>';
+  try{
+    const r = await api({action:'riwayat', id:S.user.id, pin:S.user.pin});
+    if (!r.ok) { if(/PIN/.test(r.msg||'')) return logout(r.msg); throw new Error(r.msg); }
+    const rows=(r.rows||[]).filter(x=>x&&x.t);
+    renderToday(rows, r.today);
+    $('riwList').innerHTML = rows.length ? rows.map(x=>{
+      const tl=+x.tl||0, lb=+x.lb||0, tags=[];
+      if (x.s && x.s!=='Hadir') tags.push(`<span class="tag blue">${x.s}</span>`);
+      if (tl>0) tags.push(`<span class="tag warn">Telat ${tl}m</span>`);
+      if (x.l && /LUAR/i.test(x.l)) tags.push('<span class="tag bad">Luar radius</span>');
+      if (x.m && !x.k && x.t!==r.today) tags.push('<span class="tag bad">Tanpa pulang</span>');
+      if (lb>0) tags.push(`<span class="tag ok">Lembur ${lb}j</span>`);
+      return `<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${tags.join('')||'&nbsp;'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}</div></div>`;
+    }).join('') : '<div class="empty">Belum ada data absensi.</div>';
+  }catch(e){ if(!silent) $('riwList').innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+
+/* ---------- Izin ---------- */
+function readFile(f){ return new Promise((res,rej)=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(new Error('Gagal membaca file')); fr.readAsDataURL(f); }); }
+async function compressImage(file){
+  const url = await readFile(file);
+  const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('Gambar tidak bisa dibaca')); i.src=url; });
+  const max=1400, sc=Math.min(1, max/Math.max(img.width,img.height));
+  const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.78);
+}
+async function kirimIzin(){
+  const err=$('izErr'); err.textContent='';
+  const jenis=$('izJenis').value, mulai=$('izMulai').value, selesai=$('izSelesai').value, alasan=clean($('izAlasan').value);
+  if(!mulai) return err.textContent='Isi tanggal mulai.';
+  if(selesai && selesai<mulai) return err.textContent='Tanggal selesai tidak boleh sebelum tanggal mulai.';
+  if(alasan.length<3) return err.textContent='Isi alasan.';
+  const btn=$('btnIzin'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Mengirim…';
+  try{
+    const p={action:'izin', id:S.user.id, pin:S.user.pin, jenis, mulai, selesai:(selesai&&selesai!==mulai)?`"${selesai}"`:'', alasan};
+    const f=$('izFile').files[0];
+    if(f){
+      let data, name=clean(f.name).replace(/\s+/g,'_')||'lampiran';
+      if(f.type.startsWith('image/')){ data=await compressImage(f); name=name.replace(/\.[^.]+$/,'')+'.jpg'; }
+      else if(f.type==='application/pdf'){ if(f.size>3.5*1024*1024) throw new Error('PDF maksimal 3,5 MB.'); data=await readFile(f); }
+      else throw new Error('Lampiran harus foto atau PDF.');
+      p.fname=name.slice(0,80); p.fdata=data.split(',')[1];
+    }
+    const r=await api(p);
+    if(!r.ok) throw new Error(r.msg||'Gagal mengirim.');
+    toast(r.msg,'ok'); $('izAlasan').value=''; $('izFile').value=''; $('izSelesai').value='';
+  }catch(e){ err.textContent=e.message; }
+  finally{ btn.disabled=false; btn.textContent='Kirim pengajuan'; }
+}
+
+/* ---------- Rekap ---------- */
+async function loadRekap(){
+  const tgl=$('rkTgl').value||ymd(new Date());
+  $('rkList').innerHTML='<div class="empty">Memuat…</div>';
+  try{
+    const [r,k] = await Promise.all([ api({action:'rekap', id:S.user.id, pin:S.user.pin, tgl}), S.karyawan.length?{ok:true,data:S.karyawan}:api({action:'karyawan'}) ]);
+    if(!r.ok) throw new Error(r.msg||'Tidak punya akses rekap.');
+    if(k.ok) S.karyawan=k.data.filter(x=>x&&x.id);
+    const by={}; (r.rows||[]).filter(x=>x&&x.id).forEach(x=>by[x.id.replace(/-/g,'')]=x);
+    let h=0,t=0,b=0;
+    const items=S.karyawan.map(e=>{
+      const x=by[e.id.replace(/-/g,'')];
+      if(!x){ b++; return {e,html:`<div class="it"><div class="l"><b>${e.n}</b><small><span class="tag bad">Belum absen</span></small></div><div class="r">--:--</div></div>`,o:2}; }
+      if(x.m) h++; const tl=+x.tl||0; if(tl>0) t++;
+      const tags=[]; if(x.s&&x.s!=='Hadir') tags.push(`<span class="tag blue">${x.s}</span>`);
+      if(tl>0) tags.push(`<span class="tag warn">Telat ${tl}m</span>`); if(x.l&&/LUAR/i.test(x.l)) tags.push('<span class="tag bad">Luar radius</span>');
+      return {e,html:`<div class="it"><div class="l"><b>${e.n}</b><small>${tags.join('')||'<span class="tag ok">Hadir</span>'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}</div></div>`,o:tl>0?1:0};
+    });
+    $('rkHadir').textContent=h; $('rkTelat').textContent=t; $('rkBelum').textContent=b;
+    $('rkList').innerHTML=items.length?items.map(i=>i.html).join(''):'<div class="empty">Tidak ada data.</div>';
+  }catch(e){ $('rkList').innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+
+/* ---------- Login / navigasi ---------- */
+async function loadKaryawan(){
+  const sel=$('selNama');
+  try{
+    const r=await api({action:'karyawan'});
+    S.karyawan=(r.data||[]).filter(x=>x&&x.id);
+    store.set('sk_karyawan', S.karyawan);
+  }catch(e){ S.karyawan=store.get('sk_karyawan')||[]; if(!S.karyawan.length){ sel.innerHTML='<option value="">Gagal memuat — tarik ulang halaman</option>'; $('loginErr').textContent=e.message; return; } }
+  const last=store.get('sk_last_id');
+  sel.innerHTML='<option value="">— Pilih nama Anda —</option>'+S.karyawan.map(k=>`<option value="${k.id}" ${k.id===last?'selected':''}>${k.n}</option>`).join('');
+}
+async function doLogin(){
+  const id=$('selNama').value, pin=$('inPin').value.trim(), err=$('loginErr'); err.textContent='';
+  if(!id) return err.textContent='Pilih nama Anda.';
+  if(!/^\d{4,6}$/.test(pin)) return err.textContent='PIN harus 4 digit angka.';
+  const b=$('btnLogin'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  try{
+    const r=await api({action:'login', id, pin});
+    if(!r.ok) throw new Error(r.msg||'Login gagal.');
+    S.user={id, pin, nama:r.nama, jabatan:r.jabatan, rekap:!!r.rekap};
+    store.set('sk_session', S.user); store.set('sk_last_id', id);
+    $('inPin').value='';
+    enterApp(r);
+  }catch(e){ err.textContent=e.message; }
+  finally{ b.disabled=false; b.textContent='Masuk'; }
+}
+function logout(msg){ store.del('sk_session'); S.user=null; $('app').classList.add('hidden'); $('login').classList.remove('hidden'); if(!$('selNama').options.length||$('selNama').options.length<2) loadKaryawan(); if(msg) $('loginErr').textContent=msg; }
+function enterApp(r){
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('uNama').textContent=S.user.nama; $('uJab').textContent=S.user.jabatan||'';
+  $('navRekap').classList.toggle('hidden', !S.user.rekap);
+  showTab('home');
+  refreshLoc().catch(()=>{});
+  loadRiwayat(true);
+}
+function showTab(t){
+  ['home','riwayat','izin','rekap'].forEach(x=>$('tab-'+x).classList.toggle('hidden', x!==t));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
+  if(t==='riwayat') loadRiwayat();
+  if(t==='rekap') loadRekap();
+  if(t==='home' && (!S.loc || Date.now()-S.locAt>60000)) refreshLoc().catch(()=>{});
+  window.scrollTo(0,0);
+}
+function tick(){ const d=new Date(); $('clk').textContent=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); $('tgl').textContent=HARI[d.getDay()]+', '+d.getDate()+' '+BLN[d.getMonth()]+' '+d.getFullYear(); }
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  tick(); setInterval(tick,1000);
+  $('radInfo').textContent=CFG.OFFICES.map(o=>`${o.name} ${o.r} m`).join(', ')+' · v'+CFG.VERSION;
+  $('izMulai').value=ymd(new Date()); $('rkTgl').value=ymd(new Date());
+  $('btnLogin').onclick=doLogin; $('inPin').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+  $('btnLogout').onclick=()=>logout();
+  $('btnRefresh').onclick=()=>refreshLoc().catch(e=>toast(e.message,'err'));
+  $('btnMasuk').onclick=()=>doAbsen('masuk'); $('btnPulang').onclick=()=>doAbsen('pulang');
+  $('btnIzin').onclick=kirimIzin; $('rkTgl').onchange=loadRekap;
+  document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+  const ses=store.get('sk_session');
+  if(ses&&ses.id&&ses.pin){ S.user=ses; enterApp({}); api({action:'login',id:ses.id,pin:ses.pin}).then(r=>{ if(r.ok){ S.user.rekap=!!r.rekap; S.user.nama=r.nama; store.set('sk_session',S.user); $('uNama').textContent=r.nama; $('navRekap').classList.toggle('hidden',!S.user.rekap);} else logout(r.msg); }).catch(()=>{}); }
+  else { $('login').classList.remove('hidden'); loadKaryawan(); }
+});
+</script>
+</body>
+</html>
