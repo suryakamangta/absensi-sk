@@ -1,0 +1,7 @@
+sk-release.jks
+*.jks.b64
+keystore-info.txt
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
