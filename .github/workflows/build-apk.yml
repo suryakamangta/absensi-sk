@@ -19,8 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Buat ikon aplikasi
         run: |
           sudo apt-get install -y fonts-dejavu-core >/dev/null || true
@@ -39,6 +37,9 @@ jobs:
             echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/sk-release.jks"
             echo "SK_KEYSTORE_FILE=$RUNNER_TEMP/sk-release.jks" >> "$GITHUB_ENV"
           fi
+
+      - name: Cek Android SDK
+        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" | tail -3
 
       - name: Build APK
         working-directory: android
