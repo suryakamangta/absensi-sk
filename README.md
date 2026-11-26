@@ -1,17 +1,16 @@
 # Absensi SK — Aplikasi Absensi PT. Surya Kamangta
 
-Aplikasi absensi karyawan (Android + web) yang tersambung langsung ke **HRIS Notion** Surya Kamangta lewat **Make**.
+Aplikasi absensi karyawan (Android + web) yang tersambung langsung ke **HRIS Notion** Surya Kamangta lewat API PHP di hosting perusahaan (cPanel), tanpa Make.
 
 ## Cara kerja
 
 ```
 HP karyawan (APK Absensi SK / browser)
-        │  POST form  →  Make webhook "Absensi SK App"
+        │  POST form  →  https://suryakamangta.co.id/absensi-sk/api.php
         ▼
-Make: "App Absensi SK + Laporan AJU (sementara digabung)"
-        │  cek PIN → baca/tulis Notion
+api.php (cPanel)  — cek PIN (kunci 15 menit setelah 5x salah) → Notion API
         ▼
-Notion HRIS: Karyawan · Absensi · Cuti   (+ OneDrive: LAMPIRAN IZIN ABSENSI)
+Notion HRIS: Karyawan · Absensi · Cuti (lampiran izin diunggah langsung ke Notion)
 ```
 
 | Fitur | Keterangan |
@@ -20,16 +19,25 @@ Notion HRIS: Karyawan · Absensi · Cuti   (+ OneDrive: LAMPIRAN IZIN ABSENSI)
 | Absen masuk / pulang | GPS HP dicek terhadap kantor **Head Office** (-6.1153294, 106.8857221), radius **20 m**. Di luar radius tetap bisa absen tapi wajib isi keterangan dan ditandai *DI LUAR RADIUS KANTOR*. Lokasi palsu (Fake GPS) ditolak. |
 | Ke Notion → Absensi | 1 baris per karyawan per hari: Tanggal, Karyawan, Status Hadir, Jam Masuk (tap pertama), Jam Keluar (pulang terakhir), Terlambat (menit, dari 08:00, Sen–Jum), Lokasi Kerja, Keterangan Lokasi, Lokasi Masuk/Pulang (link Google Maps), Log Absen (semua tap). Rumus Jam Lembur yang sudah ada di HRIS tetap jalan. |
 | Riwayat | 40 hari terakhir: jam masuk/pulang, telat, luar radius, lembur. |
-| Izin / sakit / cuti | Masuk ke database **Cuti** dengan status *Diajukan*. Lampiran foto/PDF disimpan di OneDrive `SERVER DATA CENTER SK/LAMPIRAN IZIN ABSENSI` dan link-nya masuk ke kolom Lampiran. |
+| Izin / sakit / cuti | Masuk ke database **Cuti** dengan status *Diajukan*. Lampiran foto/PDF (maks 5 MB) langsung tersimpan di kolom Lampiran Notion. |
 | Rekap | Hanya untuk karyawan yang dicentang **Akses Rekap Absen**: daftar hadir/telat/belum absen per tanggal. |
 
 ## Pengaturan yang sering diubah
 
 - **Lokasi & radius kantor**: `web/index.html` → `CFG.OFFICES` (bisa tambah kantor lain, mis. Operation Office).
-- **Jam masuk**: tampilan di `CFG.JAM_MASUK`; perhitungan terlambat ada di skenario Make (480 menit = 08:00).
+- **Jam masuk**: tampilan di `CFG.JAM_MASUK`; perhitungan terlambat di `config.php` → `jam_masuk_menit` (480 = 08:00).
 - **Karyawan baru**: tambah di Notion Karyawan, centang Aktif, isi PIN Absen (unik).
 
-## Build APK & hosting (GitHub)
+## Pemasangan di cPanel
+
+Folder `public_html/absensi-sk/` berisi: `index.html`, `api.php`, `.htaccess`, `config.php`.
+
+1. Buat Internal Integration di https://www.notion.so/profile/integrations (workspace Suryakamangta), salin tokennya.
+2. Di Notion buka halaman **HRIS** → ••• → **Connections** → tambahkan integrasi tersebut.
+3. Isi token di `config.php` (salin dari `config.sample.php`). File ini tidak ikut ke GitHub dan diblokir dari luar oleh `.htaccess`.
+4. Buka https://suryakamangta.co.id/absensi-sk/ dan coba login.
+
+## Build APK (GitHub)
 
 1. Buat repo GitHub (privat boleh untuk APK; untuk GitHub Pages gratis repo harus publik).
 2. Isi *Settings → Secrets and variables → Actions*:
