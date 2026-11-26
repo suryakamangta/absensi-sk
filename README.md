@@ -16,7 +16,7 @@ Notion HRIS: Karyawan · Absensi · Cuti (lampiran izin diunggah langsung ke Not
 | Fitur | Keterangan |
 |---|---|
 | Login | Pilih nama + PIN 4 digit (kolom **PIN Absen** di database Karyawan). Hanya karyawan dengan centang **Aktif**. |
-| Absen masuk / pulang | GPS HP dicek terhadap kantor **Head Office** (-6.1153294, 106.8857221), radius **20 m**. Di luar radius tetap bisa absen tapi wajib isi keterangan dan ditandai *DI LUAR RADIUS KANTOR*. Lokasi palsu (Fake GPS) ditolak. |
+| Absen masuk / pulang | GPS HP dicek terhadap kantor **Head Office** (-6.1153294, 106.8857221), radius **50 m**. Di luar radius tetap bisa absen tapi wajib isi keterangan dan ditandai *DI LUAR RADIUS KANTOR*. Lokasi palsu (Fake GPS) ditolak. |
 | Ke Notion → Absensi | 1 baris per karyawan per hari: Tanggal, Karyawan, Status Hadir, Jam Masuk (tap pertama), Jam Keluar (pulang terakhir), Terlambat (menit, dari 08:00, Sen–Jum), Lokasi Kerja, Keterangan Lokasi, Lokasi Masuk/Pulang (link Google Maps), Log Absen (semua tap). Rumus Jam Lembur yang sudah ada di HRIS tetap jalan. |
 | Riwayat | 40 hari terakhir: jam masuk/pulang, telat, luar radius, lembur. |
 | Izin / sakit / cuti | Masuk ke database **Cuti** dengan status *Diajukan*. Lampiran foto/PDF (maks 5 MB) langsung tersimpan di kolom Lampiran Notion. |
