@@ -76,6 +76,7 @@ nav button{position:relative}
 .lb .h{display:flex;justify-content:space-between;gap:8px}.lb .h b{font-size:15px}
 .lb .why{margin:6px 0;font-size:14px}.lb .meta{color:var(--mut);font-size:12px}
 .lb .acts2{display:flex;gap:8px;margin-top:8px}.lb .acts2 select{flex:1;padding:9px}.lb .acts2 button{flex:none;width:auto;padding:9px 14px}
+.mini{border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#fff;background:var(--navy)}.mini.red{background:var(--bad)}
 .btn.red{background:var(--bad)}.btn.green{background:var(--ok)}
 .sumtb{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;font-variant-numeric:tabular-nums}.sumtb th,.sumtb td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}.sumtb th:first-child,.sumtb td:first-child{text-align:left;white-space:normal}.sumtb th{color:var(--mut);font-weight:700;font-size:11px}.sumtb tr.tot td{font-weight:800;border-top:2px solid var(--ink)}
 .sec{font-size:13px;font-weight:700;color:var(--mut);margin:14px 0 2px;text-transform:uppercase;letter-spacing:.4px}
@@ -202,7 +203,7 @@ nav button{position:relative}
         <textarea id="lbAlasan" maxlength="300" placeholder="Contoh: menyelesaikan dokumen PIB AJU 2230 untuk Ultrajaya"></textarea>
         <div class="err" id="lbErr"></div>
         <button class="btn" id="btnLembur">Kirim ke Pak Richard</button>
-        <div class="foot">Lembur dihitung setelah disetujui Pak Richard. Jangan lupa absen pulang setelah selesai lembur.</div>
+        <div class="foot">Lembur dihitung setelah disetujui Pak Richard. Salah isi alasan atau batal lembur? Tekan <b>Batalkan</b> di daftar pengajuan selama belum diputuskan. Jangan lupa absen pulang setelah selesai lembur.</div>
       </div>
       <div class="card" id="lbSayaCard"><h3>Pengajuan lembur saya</h3><div class="list" id="lbSaya"><div class="empty">Memuat…</div></div></div>
     </div>
@@ -249,7 +250,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.1'
+  VERSION: '1.4.2'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -404,6 +405,16 @@ function lbTag(x){
   return '';
 }
 function setBadge(n){S.pending=+n||0; if($('dirLbN')) $('dirLbN').textContent=S.pending;  const b=$('lbBadge'); b.textContent=n; b.classList.toggle('hidden', !(n>0)); }
+async function batalLembur(pid, btn){
+  // 2 langkah: ketuk sekali untuk konfirmasi, ketuk lagi untuk membatalkan.
+  if(!btn.dataset.ok){ btn.dataset.ok='1'; btn.textContent='Yakin batal?'; setTimeout(()=>{ if(btn.isConnected&&!btn.disabled){ delete btn.dataset.ok; btn.textContent='Batalkan'; } },4000); return; }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{
+    const r=await api({action:'lembur_batal', id:S.user.id, pin:S.user.pin, row:pid});
+    if(!r.ok) throw new Error(r.msg||'Gagal membatalkan.');
+    toast(r.msg,'ok'); loadLembur();
+  }catch(e){ toast(e.message,'err'); btn.disabled=false; delete btn.dataset.ok; btn.textContent='Batalkan'; }
+}
 async function kirimLembur(){
   const err=$('lbErr'); err.textContent='';
   const tgl=$('lbTgl').value, alasan=clean($('lbAlasan').value), rencana=$('lbRencana').value;
@@ -443,7 +454,7 @@ async function loadLembur(){
     const [a,b]=await Promise.all(jobs);
     if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
     const rows=(a.rows||[]).filter(x=>x&&x.t);
-    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
+    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Diajukan'&&x.pid?`<button class="mini red" onclick="batalLembur('${x.pid}',this)">Batalkan</button>`:x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
     if(b){
       if(!b.ok) throw new Error(b.msg);
       const canAct=!!b.appr, pend=(b.pending||[]).filter(x=>x&&x.t), done=(b.done||[]).filter(x=>x&&x.t);

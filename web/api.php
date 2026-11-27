@@ -3,7 +3,7 @@
  * API Absensi SK — dipasang di cPanel: public_html/absensi-sk/api.php
  * Menghubungkan aplikasi absensi langsung ke Notion HRIS (tanpa Make).
  *
- * Aksi (POST form): karyawan | login | riwayat | absen | izin | rekap
+ * Aksi (POST form): karyawan | login | riwayat | absen | izin | rekap | lembur_* (ajukan, batal, saya, list, putus, ringkasan)
  * Kunci Notion disimpan di config.php (tidak bisa dibuka dari luar, lihat .htaccess).
  */
 
@@ -429,6 +429,26 @@ try {
                 'page_size' => 30,
             ]);
             out(['ok' => true, 'today' => $today, 'rows' => array_map('rowOut', $r['results'] ?? [])]);
+
+        case 'lembur_batal':
+            // Karyawan membatalkan pengajuan lemburnya sendiri selama belum diputuskan Direktur.
+            $row = rowAbsensi(p('row'));
+            $owner = $row['properties']['Karyawan']['relation'][0]['id'] ?? '';
+            if (nid($owner) !== nid($kid)) fail('Pengajuan lembur ini bukan milik Anda.');
+            if (sel($row, 'Status Lembur') !== 'Diajukan' || chk($row, 'Disetujui Direktur')) fail('Pengajuan ini sudah diputuskan Direktur, tidak bisa dibatalkan.');
+            $tglRow = $row['properties']['Tanggal']['date']['start'] ?? $today;
+            if (txt($row, 'Jam Masuk') === '' && txt($row, 'Jam Keluar') === '' && txt($row, 'Log Absen') === '') {
+                // Baris dibuat hanya untuk pengajuan lembur (tanpa absen): hapus agar tidak tercatat hadir.
+                notion('PATCH', '/v1/pages/' . $row['id'], ['in_trash' => true]);
+            } else {
+                notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => [
+                    'Status Lembur' => ['select' => null],
+                    'Keterangan Lembur' => rt(''),
+                    'Bulan Lembur' => ['select' => null],
+                    'Approval Lembur' => rt('Pengajuan dibatalkan oleh ' . $nama . ', ' . date('d/m/Y H:i') . ' via App'),
+                ]]);
+            }
+            out(['ok' => true, 'msg' => 'Pengajuan lembur tanggal ' . date('d/m/Y', strtotime($tglRow)) . ' dibatalkan.']);
 
         case 'lembur_list':
             // Approver Lembur (Pak Richard) bisa menyetujui; Akses Rekap Absen (HRD) hanya melihat.
