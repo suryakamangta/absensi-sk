@@ -10,7 +10,13 @@
 declare(strict_types=1);
 date_default_timezone_set('Asia/Jakarta');
 
-header('Access-Control-Allow-Origin: *');
+// Hanya web absensi sendiri dan APK (salinan bawaan APK = origin "null") yang boleh memanggil API dari browser.
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, ['https://suryakamangta.co.id', 'https://www.suryakamangta.co.id', 'null'], true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+}
+header('X-Content-Type-Options: nosniff');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -64,7 +70,6 @@ function notion(string $method, string $path, ?array $body = null): array {
     $res = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     if ($res === false) throw new RuntimeException('Tidak bisa terhubung ke Notion: ' . $err);
     $j = json_decode($res, true) ?: [];
     if ($code >= 400) {
@@ -560,7 +565,6 @@ function notionUpload(string $bin, string $fname, string $mime): string {
     ]);
     $res = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     @unlink($tmp);
     if ($code >= 400 || $res === false) throw new RuntimeException('Upload lampiran gagal (' . $code . ')');
     return $u['id'];
