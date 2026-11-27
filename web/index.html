@@ -178,8 +178,6 @@ nav button{position:relative}
         <h3 id="lbApprTitle">Persetujuan lembur</h3>
         <div class="foot" id="lbApprInfo" style="text-align:left;margin:0"></div>
         <div id="lbPending"><div class="empty">Memuat…</div></div>
-        <div class="sec">14 hari terakhir</div>
-        <div id="lbDone"></div>
       </div>
       <div class="card hidden" id="lbSumCard">
         <h3>Ringkasan lembur bulanan</h3>
@@ -187,7 +185,11 @@ nav button{position:relative}
         <div class="foot" id="lbPeriode" style="text-align:left;margin:6px 0 0"></div>
         <div style="overflow-x:auto"><table class="sumtb" id="lbSum"></table></div>
       </div>
-      <div class="card">
+      <div class="card hidden" id="lbDoneCard">
+        <h3>Riwayat keputusan (14 hari terakhir)</h3>
+        <div id="lbDone"></div>
+      </div>
+      <div class="card" id="lbAjukanCard">
         <h3>Ajukan lembur</h3>
         <div class="row2">
           <div><label for="lbTgl">Tanggal</label><input type="date" id="lbTgl"></div>
@@ -199,7 +201,7 @@ nav button{position:relative}
         <button class="btn" id="btnLembur">Kirim ke Pak Richard</button>
         <div class="foot">Lembur dihitung setelah disetujui Pak Richard. Jangan lupa absen pulang setelah selesai lembur.</div>
       </div>
-      <div class="card"><h3>Pengajuan lembur saya</h3><div class="list" id="lbSaya"><div class="empty">Memuat…</div></div></div>
+      <div class="card" id="lbSayaCard"><h3>Pengajuan lembur saya</h3><div class="list" id="lbSaya"><div class="empty">Memuat…</div></div></div>
     </div>
 
     <!-- REKAP -->
@@ -241,7 +243,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.3.1'
+  VERSION: '1.3.2'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -425,8 +427,11 @@ function lbCard(x, me, canAct){
     ${x.ap && x.st!=='Diajukan'?`<div class="meta">${esc(x.ap)}</div>`:''}${act}</div>`;
 }
 async function loadLembur(){
+  // Approver (Direktur) tidak mengajukan lembur: hanya persetujuan tim + ringkasan bulanan.
+  const dir=!!S.user.appr;
+  $('lbAjukanCard').classList.toggle('hidden', dir); $('lbSayaCard').classList.toggle('hidden', dir);
   $('lbSaya').innerHTML='<div class="empty">Memuat…</div>';
-  const jobs=[api({action:'lembur_saya', id:S.user.id, pin:S.user.pin})];
+  const jobs=[dir?Promise.resolve({ok:true,rows:[]}):api({action:'lembur_saya', id:S.user.id, pin:S.user.pin})];
   if(S.user.lview) jobs.push(api({action:'lembur_list', id:S.user.id, pin:S.user.pin}));
   try{
     const [a,b]=await Promise.all(jobs);
@@ -437,12 +442,12 @@ async function loadLembur(){
       if(!b.ok) throw new Error(b.msg);
       const canAct=!!b.appr, pend=(b.pending||[]).filter(x=>x&&x.t), done=(b.done||[]).filter(x=>x&&x.t);
       $('lbApprCard').classList.remove('hidden');
-      $('lbApprTitle').textContent = canAct ? 'Persetujuan lembur' : 'Pengajuan lembur karyawan';
+      $('lbApprTitle').textContent = canAct ? 'Pengajuan lembur tim' : 'Pengajuan lembur karyawan';
       $('lbApprInfo').textContent = canAct ? `${pend.length} pengajuan menunggu persetujuan Anda.` : `Info HRD — ${pend.length} pengajuan menunggu persetujuan Pak Richard.`;
       $('lbPending').innerHTML = pend.length ? pend.map(x=>lbCard(x,b.me,canAct)).join('') : '<div class="empty">Tidak ada pengajuan yang menunggu.</div>';
       $('lbDone').innerHTML = done.length ? done.map(x=>lbCard(x,b.me,false)).join('') : '<div class="empty">Belum ada.</div>';
       setBadge(pend.length);
-      $('lbSumCard').classList.remove('hidden');
+      $('lbSumCard').classList.remove('hidden'); $('lbDoneCard').classList.remove('hidden');
       if(!$('lbBulan').options.length) initBulan();
       loadRingkasan();
     }
