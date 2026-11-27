@@ -74,6 +74,7 @@ nav button{position:relative}
 .lb .why{margin:6px 0;font-size:14px}.lb .meta{color:var(--mut);font-size:12px}
 .lb .acts2{display:flex;gap:8px;margin-top:8px}.lb .acts2 select{flex:1;padding:9px}.lb .acts2 button{flex:none;width:auto;padding:9px 14px}
 .btn.red{background:var(--bad)}.btn.green{background:var(--ok)}
+.sumtb{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;font-variant-numeric:tabular-nums}.sumtb th,.sumtb td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}.sumtb th:first-child,.sumtb td:first-child{text-align:left;white-space:normal}.sumtb th{color:var(--mut);font-weight:700;font-size:11px}.sumtb tr.tot td{font-weight:800;border-top:2px solid var(--ink)}
 .sec{font-size:13px;font-weight:700;color:var(--mut);margin:14px 0 2px;text-transform:uppercase;letter-spacing:.4px}
 .sheet{position:fixed;inset:0;background:rgba(10,20,35,.5);z-index:40;display:flex;align-items:flex-end}
 .sheet .box{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
@@ -180,6 +181,12 @@ nav button{position:relative}
         <div class="sec">14 hari terakhir</div>
         <div id="lbDone"></div>
       </div>
+      <div class="card hidden" id="lbSumCard">
+        <h3>Ringkasan lembur bulanan</h3>
+        <select id="lbBulan"></select>
+        <div class="foot" id="lbPeriode" style="text-align:left;margin:6px 0 0"></div>
+        <div style="overflow-x:auto"><table class="sumtb" id="lbSum"></table></div>
+      </div>
       <div class="card">
         <h3>Ajukan lembur</h3>
         <div class="row2">
@@ -234,7 +241,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.2.0'
+  VERSION: '1.3.0'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -385,6 +392,7 @@ function lbTag(x){
   if(x.st==='Diajukan') return '<span class="tag warn">Lembur diajukan</span>';
   if(x.st==='Disetujui') return `<span class="tag ok">Lembur ✓ ${esc(x.tp)}</span>`;
   if(x.st==='Ditolak') return '<span class="tag bad">Lembur ditolak</span>';
+  if(x.st==='Tidak Mengajukan') return '<span class="tag">Tidak mengajukan lembur</span>';
   return '';
 }
 function setBadge(n){ const b=$('lbBadge'); b.textContent=n; b.classList.toggle('hidden', !(n>0)); }
@@ -407,10 +415,10 @@ function lbCard(x, me, canAct){
   const self = x.id && me && x.id.replace(/-/g,'')===me.replace(/-/g,'');
   let act='';
   if(x.st==='Diajukan' && canAct && !self){
-    act=`<div class="acts2"><select id="tp_${x.pid}"><option value="auto">Tipe otomatis</option><option>Sore</option><option>Malam</option><option>Weekend</option></select>
+    act=`<div class="acts2"><select id="tp_${x.pid}"><option value="auto">Tipe otomatis</option><option>Sore</option><option>Malam</option><option>Weekend</option><option value="Lembur">Lembur (flat)</option></select>
       <button class="btn green" onclick="putusLembur('${x.pid}','setuju',this)">Setujui</button><button class="btn red" onclick="putusLembur('${x.pid}','tolak',this)">Tolak</button></div>`;
   } else if(x.st==='Diajukan' && canAct && self){ act='<div class="meta">Lembur Anda sendiri — tidak bisa disetujui sendiri.</div>'; }
-  const nom = x.st==='Disetujui' && x.nm!=='' ? ' · '+rupiah(x.nm) : '';
+  const nom = x.st==='Disetujui' && x.nm!=='' ? ' · '+rupiah(x.nm)+(x.lt!==''?` (transport ${rupiah(x.lt)} + makan ${rupiah(x.lm)})`:'') : '';
   return `<div class="lb"><div class="h"><b>${esc(x.nama)}</b>${lbTag(x)}</div>
     <div class="meta">${fmtTgl(x.t)} · absen ${jam}${x.tp?' · '+esc(x.tp):''}${nom}</div>
     <div class="why">${esc(x.kl)||'<i>(tanpa alasan)</i>'}</div>
@@ -424,7 +432,7 @@ async function loadLembur(){
     const [a,b]=await Promise.all(jobs);
     if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
     const rows=(a.rows||[]).filter(x=>x&&x.t);
-    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} ${esc(x.kl)}</small></div><div class="r">${x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
+    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} ${esc(x.kl)}</small></div><div class="r">${x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
     if(b){
       if(!b.ok) throw new Error(b.msg);
       const canAct=!!b.appr, pend=(b.pending||[]).filter(x=>x&&x.t), done=(b.done||[]).filter(x=>x&&x.t);
@@ -434,8 +442,34 @@ async function loadLembur(){
       $('lbPending').innerHTML = pend.length ? pend.map(x=>lbCard(x,b.me,canAct)).join('') : '<div class="empty">Tidak ada pengajuan yang menunggu.</div>';
       $('lbDone').innerHTML = done.length ? done.map(x=>lbCard(x,b.me,false)).join('') : '<div class="empty">Belum ada.</div>';
       setBadge(pend.length);
+      $('lbSumCard').classList.remove('hidden');
+      if(!$('lbBulan').options.length) initBulan();
+      loadRingkasan();
     }
   }catch(e){ toast(e.message,'err'); }
+}
+function initBulan(){
+  // periode tutup buku = hari kerja terakhir tiap bulan (seperti rekap Excel)
+  const now=new Date(); let y=now.getFullYear(), m=now.getMonth()+1;
+  const tb=(y,m)=>{ const d=new Date(y,m,0); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()-1); return ymd(d); };
+  if(ymd(now)>tb(y,m)){ m++; if(m>12){m=1;y++;} }
+  const opts=[]; for(let i=0;i<12;i++){ opts.push(`<option value="${y}-${pad(m)}">${BLN[m-1]} ${y}</option>`); m--; if(m<1){m=12;y--;} if(y<2026||(y===2026&&m<10)) break; }
+  $('lbBulan').innerHTML=opts.join(''); $('lbBulan').onchange=loadRingkasan;
+}
+async function loadRingkasan(){
+  const t=$('lbSum'); t.innerHTML='<tr><td class="empty">Memuat…</td></tr>';
+  try{
+    const r=await api({action:'lembur_ringkasan', id:S.user.id, pin:S.user.pin, bulan:$('lbBulan').value});
+    if(!r.ok) throw new Error(r.msg);
+    $('lbPeriode').textContent=`Periode ${fmtTgl(r.mulai)} s/d ${fmtTgl(r.akhir)} · hanya lembur yang disetujui yang dihitung`;
+    const rows=r.rows||[]; if(!rows.length){ t.innerHTML='<tr><td class="empty">Belum ada lembur di periode ini.</td></tr>'; return; }
+    const k=n=>Number(n||0).toLocaleString('id-ID'), tot={Sore:0,Malam:0,Weekend:0,Lembur:0,transport:0,makan:0,total:0};
+    rows.forEach(x=>Object.keys(tot).forEach(f=>tot[f]+=+x[f]||0));
+    const ket=x=>[x.diajukan?`${x.diajukan} menunggu`:'',x.ditolak?`${x.ditolak} ditolak`:''].filter(Boolean).join(', ');
+    t.innerHTML='<tr><th>Nama</th><th>Sore</th><th>Malam</th><th>Wknd</th><th>Lembur</th><th>Transport</th><th>Makan</th><th>Total</th></tr>'+
+      rows.map(x=>`<tr><td>${esc(x.nama)}${ket(x)?`<br><small style="color:var(--mut)">${ket(x)}</small>`:''}</td><td>${x.Sore||''}</td><td>${x.Malam||''}</td><td>${x.Weekend||''}</td><td>${x.Lembur||''}</td><td>${k(x.transport)}</td><td>${k(x.makan)}</td><td><b>${k(x.total)}</b></td></tr>`).join('')+
+      `<tr class="tot"><td>Total</td><td>${tot.Sore}</td><td>${tot.Malam}</td><td>${tot.Weekend}</td><td>${tot.Lembur}</td><td>${k(tot.transport)}</td><td>${k(tot.makan)}</td><td>${k(tot.total)}</td></tr>`;
+  }catch(e){ t.innerHTML=`<tr><td class="empty">${esc(e.message)}</td></tr>`; }
 }
 async function putusLembur(pid, keputusan, btn){
   const tipe = ($('tp_'+pid)||{}).value||'auto';

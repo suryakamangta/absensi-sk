@@ -26,7 +26,8 @@ const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit'
 const LOKASI_KERJA = ['Head Office', 'Operation Office', 'WFH', 'Lapangan', 'Di Luar Kantor'];
 /** Tanggal merah / cuti bersama (dihitung lembur Weekend). Tambahkan di sini bila perlu. */
 const LIBUR = ['2026-12-24', '2026-12-25'];
-const TIPE_LEMBUR = ['Sore', 'Malam', 'Weekend'];
+const TIPE_LEMBUR = ['Sore', 'Malam', 'Weekend', 'Lembur'];
+const BLN_ID = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
 function out(array $data, int $code = 200): void {
     http_response_code($code);
@@ -156,6 +157,8 @@ function rowOut(array $x, bool $withKaryawan = false): array {
         'st' => sel($x, 'Status Lembur'),
         'tp' => sel($x, 'Tipe Lembur'),
         'nm' => (string)(num($x, 'Nominal Lembur') ?? ''),
+        'lt' => (string)(num($x, 'Transport Lembur') ?? ''),
+        'lm' => (string)(num($x, 'Makan Lembur') ?? ''),
         'kl' => txt($x, 'Keterangan Lembur'),
         'ap' => txt($x, 'Approval Lembur'),
     ];
@@ -164,22 +167,50 @@ function rowOut(array $x, bool $withKaryawan = false): array {
 }
 
 /* ---------------- Lembur ---------------- */
-/** Tipe lembur otomatis (pola rekap Excel): libur -> Weekend; pulang >= 20:00 atau < 05:00 -> Malam; selain itu Sore. */
-function tipeOtomatis(string $tgl, string $jamKeluar): string {
+/** Tipe lembur otomatis (pola rekap Excel): libur -> Weekend; pulang >= 20:00 atau < 05:00 -> Malam; selain itu Sore.
+ *  Karyawan "Lembur Flat" (mis. Norma, Franky): hari kerja selalu "Lembur". */
+function tipeOtomatis(string $tgl, string $jamKeluar, bool $flat = false): string {
     $dow = (int)date('N', strtotime($tgl));
     if ($dow >= 6 || in_array($tgl, LIBUR, true)) return 'Weekend';
+    if ($flat) return 'Lembur';
     if (preg_match('/^(\d{1,2}):(\d{2})/', $jamKeluar, $m)) {
         $min = (int)$m[1] * 60 + (int)$m[2];
         if ($min >= 20 * 60 || $min < 5 * 60) return 'Malam';
     }
     return 'Sore';
 }
-/** Nominal = Upah + Uang Makan sesuai tipe, dari data karyawan. null jika tarif belum diisi. */
-function nominalLembur(string $karyawanId, string $tipe): ?float {
+/** Tipe + penggantian transport & makan lembur dari tarif karyawan. t/m = null jika tarif belum diisi. */
+function tarifLembur(string $karyawanId, string $tgl, string $jamKeluar, string $pilih = 'auto'): array {
     $k = notion('GET', "/v1/pages/$karyawanId");
-    $u = num($k, "Lembur $tipe Upah");
-    if ($u === null) return null;
-    return (float)$u + (float)(num($k, "Lembur $tipe Uang Makan") ?? 0);
+    $flat = chk($k, 'Lembur Flat');
+    $auto = !in_array($pilih, TIPE_LEMBUR, true);
+    $tp = $auto ? tipeOtomatis($tgl, $jamKeluar, $flat) : $pilih;
+    if ($flat && in_array($tp, ['Sore', 'Malam'], true)) $tp = 'Lembur';
+    if (!$flat && $tp === 'Lembur') $tp = tipeOtomatis($tgl, $jamKeluar, false);
+    $kol = $tp === 'Lembur' ? 'Sore' : $tp;
+    $t = num($k, "Lembur $kol Transport");
+    $m = num($k, "Lembur $kol Uang Makan");
+    return ['tipe' => $tp, 'auto' => $auto, 't' => $t === null ? null : (float)$t, 'm' => $t === null ? null : (float)($m ?? 0)];
+}
+function propsTarif(array $tr): array {
+    if ($tr['t'] === null) return ['Tipe Lembur' => ['select' => ['name' => $tr['tipe']]]];
+    return [
+        'Tipe Lembur' => ['select' => ['name' => $tr['tipe']]],
+        'Transport Lembur' => ['number' => $tr['t']],
+        'Makan Lembur' => ['number' => $tr['m']],
+        'Nominal Lembur' => ['number' => $tr['t'] + $tr['m']],
+    ];
+}
+/** Periode rekap lembur: tutup buku hari kerja terakhir tiap bulan (seperti rekap Excel). */
+function tutupBuku(int $y, int $mo): string {
+    $d = strtotime(sprintf('%04d-%02d-01', $y, $mo) . ' +1 month -1 day');
+    while ((int)date('N', $d) >= 6) $d -= 86400;
+    return date('Y-m-d', $d);
+}
+function bulanLembur(string $tgl): string {
+    $y = (int)substr($tgl, 0, 4); $mo = (int)substr($tgl, 5, 2);
+    if ($tgl > tutupBuku($y, $mo)) { $mo++; if ($mo > 12) { $mo = 1; $y++; } }
+    return sprintf('%04d-%02d %s', $y, $mo, BLN_ID[$mo]);
 }
 function lemburOut(array $x): array {
     $o = rowOut($x, true);
@@ -306,10 +337,7 @@ try {
                     }
                     $msg = "Absen PULANG tercatat pukul $now";
                     if (sel($row, 'Status Lembur') === 'Disetujui' && str_contains(txt($row, 'Approval Lembur'), 'tipe otomatis')) {
-                        $tp = tipeOtomatis($today, $now);
-                        $props['Tipe Lembur'] = ['select' => ['name' => $tp]];
-                        $nom = nominalLembur($kid, $tp);
-                        if ($nom !== null) $props['Nominal Lembur'] = ['number' => $nom];
+                        $props += propsTarif(tarifLembur($kid, $today, $now));
                     }
                 }
                 notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
@@ -362,13 +390,17 @@ try {
                 'Approval Lembur' => rt('Diajukan ' . date('d/m H:i') . ', menunggu persetujuan'),
                 'Tipe Lembur' => ['select' => null],
                 'Nominal Lembur' => ['number' => null],
+                'Transport Lembur' => ['number' => null],
+                'Makan Lembur' => ['number' => null],
+                'Bulan Lembur' => ['select' => ['name' => bulanLembur($tgl)]],
             ];
             $row = dayRow($kid, $tgl);
             if ($row) {
                 if (sel($row, 'Status Lembur') === 'Disetujui') fail('Lembur tanggal ini sudah disetujui.');
+                if (sel($row, 'Status Lembur') === 'Ditolak') fail('Lembur tanggal ini sudah ditolak Pak Richard.');
                 notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
             } else {
-                unset($props['Tipe Lembur'], $props['Nominal Lembur']);
+                unset($props['Tipe Lembur'], $props['Nominal Lembur'], $props['Transport Lembur'], $props['Makan Lembur']);
                 $props += [
                     'Judul' => ['title' => [['text' => ['content' => "$nama - $tgl"]]]],
                     'Tanggal' => ['date' => ['start' => $tgl]],
@@ -413,6 +445,7 @@ try {
             if (!chk($k, 'Approver Lembur')) fail('Anda tidak punya akses persetujuan lembur.');
             $row = rowAbsensi(p('row'));
             $owner = $row['properties']['Karyawan']['relation'][0]['id'] ?? '';
+            if ($owner === '') fail('Data lembur tidak punya karyawan.');
             if (nid($owner) === nid($kid)) fail('Lembur Anda sendiri harus disetujui approver lain.');
             $keputusan = p('keputusan');
             $catatan = clean(p('catatan'), 150);
@@ -422,24 +455,50 @@ try {
                 notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => [
                     'Status Lembur' => ['select' => ['name' => 'Ditolak']],
                     'Nominal Lembur' => ['number' => 0],
+                    'Transport Lembur' => ['number' => 0],
+                    'Makan Lembur' => ['number' => 0],
+                    'Bulan Lembur' => ['select' => ['name' => bulanLembur($tglRow)]],
                     'Approval Lembur' => rt("Ditolak oleh $nama, $stamp via App" . ($catatan !== '' ? " | $catatan" : '')),
                 ]]);
                 out(['ok' => true, 'msg' => 'Lembur ditolak.']);
             }
             if ($keputusan !== 'setuju') fail('Keputusan tidak dikenal.');
-            $pilih = p('tipe', 'auto');
-            $auto = !in_array($pilih, TIPE_LEMBUR, true);
-            $tp = $auto ? tipeOtomatis($tglRow, txt($row, 'Jam Keluar')) : $pilih;
-            $nom = $owner ? nominalLembur($owner, $tp) : null;
-            $props = [
+            $tr = tarifLembur($owner, $tglRow, txt($row, 'Jam Keluar'), p('tipe', 'auto'));
+            $props = propsTarif($tr) + [
                 'Status Lembur' => ['select' => ['name' => 'Disetujui']],
-                'Tipe Lembur' => ['select' => ['name' => $tp]],
-                'Approval Lembur' => rt("Disetujui oleh $nama, $stamp via App" . ($auto ? ' · tipe otomatis' : '') . ($catatan !== '' ? " | $catatan" : '')),
+                'Bulan Lembur' => ['select' => ['name' => bulanLembur($tglRow)]],
+                'Approval Lembur' => rt("Disetujui oleh $nama, $stamp via App" . ($tr['auto'] ? ' · tipe otomatis' : '') . ($catatan !== '' ? " | $catatan" : '')),
             ];
-            if ($nom !== null) $props['Nominal Lembur'] = ['number' => $nom];
             notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
-            $rp = $nom !== null ? ' Rp ' . number_format($nom, 0, ',', '.') : ' (tarif lembur karyawan ini belum diisi di HRIS)';
-            out(['ok' => true, 'msg' => "Lembur disetujui: $tp$rp."]);
+            $rp = $tr['t'] !== null ? ' Rp ' . number_format($tr['t'] + $tr['m'], 0, ',', '.') . ' (transport ' . number_format($tr['t'], 0, ',', '.') . ' + makan ' . number_format($tr['m'], 0, ',', '.') . ')' : ' (tarif lembur karyawan ini belum diisi di HRIS)';
+            out(['ok' => true, 'msg' => "Lembur disetujui: {$tr['tipe']}$rp."]);
+
+        case 'lembur_ringkasan':
+            if (!chk($k, 'Approver Lembur') && !chk($k, 'Akses Rekap Absen')) fail('Anda tidak punya akses melihat lembur.');
+            $bln = p('bulan', substr(bulanLembur($today), 0, 7));
+            if (!preg_match('/^(\d{4})-(\d{2})$/', $bln, $mm)) fail('Bulan tidak valid.');
+            $label = sprintf('%s %s', $bln, BLN_ID[(int)$mm[2]]);
+            $rows = query(DS_ABSENSI, ['filter' => ['property' => 'Bulan Lembur', 'select' => ['equals' => $label]], 'page_size' => 100]);
+            $per = [];
+            foreach ($rows as $x) {
+                $st = sel($x, 'Status Lembur');
+                $nm = lemburOut($x)['nama'];
+                $per[$nm] ??= ['nama' => $nm, 'Sore' => 0, 'Malam' => 0, 'Weekend' => 0, 'Lembur' => 0, 'transport' => 0, 'makan' => 0, 'total' => 0, 'diajukan' => 0, 'ditolak' => 0];
+                if ($st === 'Disetujui') {
+                    $tp = sel($x, 'Tipe Lembur');
+                    if (isset($per[$nm][$tp])) $per[$nm][$tp]++;
+                    $per[$nm]['transport'] += (float)(num($x, 'Transport Lembur') ?? 0);
+                    $per[$nm]['makan'] += (float)(num($x, 'Makan Lembur') ?? 0);
+                    $per[$nm]['total'] += (float)(num($x, 'Nominal Lembur') ?? 0);
+                } elseif ($st === 'Diajukan') $per[$nm]['diajukan']++;
+                elseif ($st === 'Ditolak') $per[$nm]['ditolak']++;
+            }
+            $per = array_values($per);
+            usort($per, fn($a, $b) => $b['total'] <=> $a['total'] ?: strcmp($a['nama'], $b['nama']));
+            $y = (int)$mm[1]; $mo = (int)$mm[2]; $py = $mo === 1 ? $y - 1 : $y; $pm = $mo === 1 ? 12 : $mo - 1;
+            $mulai = date('Y-m-d', strtotime(tutupBuku($py, $pm) . ' +1 day'));
+            foreach ($rows as $x) { $d = $x['properties']['Tanggal']['date']['start'] ?? ''; if ($d !== '' && $d < $mulai) $mulai = $d; }
+            out(['ok' => true, 'bulan' => $bln, 'label' => $label, 'mulai' => $mulai, 'akhir' => tutupBuku($y, $mo), 'rows' => $per]);
 
         case 'rekap':
             if (!chk($k, 'Akses Rekap Absen')) fail('Anda tidak punya akses rekap.');
