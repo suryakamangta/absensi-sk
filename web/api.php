@@ -426,7 +426,7 @@ try {
                     ['property' => 'Status Lembur', 'select' => ['is_not_empty' => true]],
                 ]],
                 'sorts' => [['property' => 'Tanggal', 'direction' => 'descending']],
-                'page_size' => 30,
+                'page_size' => 100,
             ]);
             out(['ok' => true, 'today' => $today, 'rows' => array_map('rowOut', $r['results'] ?? [])]);
 

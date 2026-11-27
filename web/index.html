@@ -76,6 +76,8 @@ nav button{position:relative}
 .lb .h{display:flex;justify-content:space-between;gap:8px}.lb .h b{font-size:15px}
 .lb .why{margin:6px 0;font-size:14px}.lb .meta{color:var(--mut);font-size:12px}
 .lb .acts2{display:flex;gap:8px;margin-top:8px}.lb .acts2 select{flex:1;padding:9px}.lb .acts2 button{flex:none;width:auto;padding:9px 14px}
+.bln{border-bottom:1px solid var(--line)}.bln summary{list-style:none;cursor:pointer;display:flex;flex-direction:column;padding:10px 0}.bln summary::-webkit-details-marker{display:none}
+.bln summary b::before{content:'▸ ';color:var(--mut)}.bln[open] summary b::before{content:'▾ '}.bln summary small{color:var(--mut);font-size:12px;margin-left:14px}.bln .list .it:last-child{border-bottom:0}
 .dur{color:var(--navy);font-size:12px;font-weight:600}
 .mini{border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#fff;background:var(--navy)}.mini.red{background:var(--bad)}
 .btn.red{background:var(--bad)}.btn.green{background:var(--ok)}
@@ -251,7 +253,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.3'
+  VERSION: '1.4.4'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -397,6 +399,8 @@ async function loadRiwayat(silent){
 /* ---------- Lembur ---------- */
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rupiah = n => 'Rp '+Number(n||0).toLocaleString('id-ID');
+// Periode lembur 'YYYY-MM': lewat hari kerja terakhir bulan itu masuk bulan berikutnya.
+function periodeLembur(t){ let [y,m]=t.split('-').map(Number); const d=new Date(y,m,0); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()-1); if(t>ymd(d)){ m++; if(m>12){m=1;y++;} } return `${y}-${pad(m)}`; }
 // Lama kerja dari jam masuk s/d jam pulang (lewat tengah malam dihitung +24 jam). '' jika salah satu kosong.
 function durasi(m,k){ const t=v=>{const a=/^(\d{1,2}):(\d{2})/.exec(v||''); return a?(+a[1])*60+(+a[2]):null;}; const a=t(m), b=t(k); if(a===null||b===null) return ''; let d=b-a; if(d<0) d+=1440; return `${Math.floor(d/60)} jam ${d%60} menit`; }
 function pulangAwal(x){ if(!x.k||!x.m||!x.t) return false; const d=new Date(x.t+'T00:00:00').getDay(); return d>0&&d<6&&x.k>='05:00'&&x.k<CFG.JAM_PULANG; }
@@ -457,7 +461,14 @@ async function loadLembur(){
     const [a,b]=await Promise.all(jobs);
     if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
     const rows=(a.rows||[]).filter(x=>x&&x.t);
-    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Diajukan'&&x.pid?`<button class="mini red" onclick="batalLembur('${x.pid}',this)">Batalkan</button>`:x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
+    const itemLb=x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Diajukan'&&x.pid?`<button class="mini red" onclick="batalLembur('${x.pid}',this)">Batalkan</button>`:x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`;
+    // Kelompokkan per periode lembur (tutup buku hari kerja terakhir tiap bulan, sama dengan ringkasan & payroll).
+    const grp={}; rows.forEach(x=>{ const p=periodeLembur(x.t); (grp[p]=grp[p]||[]).push(x); });
+    const now=periodeLembur(ymd(new Date()));
+    $('lbSaya').innerHTML = rows.length ? Object.keys(grp).sort().reverse().map(p=>{ const xs=grp[p], [y,m]=p.split('-').map(Number);
+      const ok=xs.filter(x=>x.st==='Disetujui'), tot=ok.reduce((a,x)=>a+(+x.nm||0),0), mg=xs.filter(x=>x.st==='Diajukan').length;
+      const info=[`${xs.length} pengajuan`, ok.length?`${ok.length} disetujui · ${rupiah(tot)}`:'', mg?`${mg} menunggu`:''].filter(Boolean).join(' · ');
+      return `<details class="bln"${p===now?' open':''}><summary><b>${BLN[m-1]} ${y}</b><small>${info}</small></summary><div class="list">${xs.map(itemLb).join('')}</div></details>`; }).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
     if(b){
       if(!b.ok) throw new Error(b.msg);
       const canAct=!!b.appr, pend=(b.pending||[]).filter(x=>x&&x.t), done=(b.done||[]).filter(x=>x&&x.t);
