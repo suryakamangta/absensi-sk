@@ -253,7 +253,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.4'
+  VERSION: '1.4.5'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -461,7 +461,7 @@ async function loadLembur(){
     const [a,b]=await Promise.all(jobs);
     if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
     const rows=(a.rows||[]).filter(x=>x&&x.t);
-    const itemLb=x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Diajukan'&&x.pid?`<button class="mini red" onclick="batalLembur('${x.pid}',this)">Batalkan</button>`:x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`;
+    const itemLb=x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} <span style="font-variant-numeric:tabular-nums">🕘 ${x.m||'--:--'} → ${x.k||'--:--'}</span>${durasi(x.m,x.k)?`<br><span class="dur">⏱ ${durasi(x.m,x.k)}</span>`:''}${x.kl?'<br>'+esc(x.kl):''}</small></div><div class="r">${x.st==='Diajukan'&&x.pid?`<button class="mini red" onclick="batalLembur('${x.pid}',this)">Batalkan</button>`:x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm)+(x.lt!==''?`<br><small style="color:var(--mut)">T ${rupiah(x.lt)} + M ${rupiah(x.lm)}</small>`:''):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`;
     // Kelompokkan per periode lembur (tutup buku hari kerja terakhir tiap bulan, sama dengan ringkasan & payroll).
     const grp={}; rows.forEach(x=>{ const p=periodeLembur(x.t); (grp[p]=grp[p]||[]).push(x); });
     const now=periodeLembur(ymd(new Date()));
