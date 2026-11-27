@@ -23,6 +23,7 @@ const DS_KARYAWAN = 'ff1a2b01-5d22-8337-a0d9-87310d3db010';
 const DS_ABSENSI  = '17ea2b01-5d22-823c-9fe5-0795550e1237';
 const DS_CUTI     = '5b1a2b01-5d22-82ff-838c-872b34bdae2e';
 const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit', 'Cuti Menikah', 'Cuti Melahirkan', 'Cuti Duka', 'Cuti Tanpa Gaji'];
+const CUTI_PEREMPUAN = ['Cuti Melahirkan'];
 const LOKASI_KERJA = ['Head Office', 'Operation Office', 'WFH', 'Lapangan', 'Di Luar Kantor'];
 /** Tanggal merah / cuti bersama (dihitung lembur Weekend). Tambahkan di sini bila perlu. */
 const LIBUR = ['2026-12-24', '2026-12-25'];
@@ -250,7 +251,8 @@ try {
             'sorts' => [['property' => 'Nama Lengkap', 'direction' => 'ascending']],
             'page_size' => 100,
         ]);
-        out(['ok' => true, 'data' => array_map(fn($k) => ['id' => $k['id'], 'n' => txt($k, 'Nama Lengkap'), 'j' => txt($k, 'Jabatan')], $rows)]);
+        // 'x' = 1 untuk Direktur/Approver Lembur: tidak wajib absen, tidak dihitung "belum absen" di monitor.
+        out(['ok' => true, 'data' => array_map(fn($k) => ['id' => $k['id'], 'n' => txt($k, 'Nama Lengkap'), 'j' => txt($k, 'Jabatan'), 'x' => chk($k, 'Approver Lembur') ? 1 : 0], $rows)]);
     }
 
     $k = auth();
@@ -268,8 +270,8 @@ try {
                 'page_size' => 40,
             ]);
             out([
-                'ok' => true, 'id' => $kid, 'nama' => $nama, 'jabatan' => txt($k, 'Jabatan'),
-                'rekap' => chk($k, 'Akses Rekap Absen') ? 1 : 0,
+                'ok' => true, 'id' => $kid, 'nama' => $nama, 'jabatan' => txt($k, 'Jabatan'), 'jk' => sel($k, 'Jenis Kelamin'),
+                'rekap' => (chk($k, 'Akses Rekap Absen') || chk($k, 'Approver Lembur')) ? 1 : 0,
                 'appr' => chk($k, 'Approver Lembur') ? 1 : 0,
                 'lview' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? 1 : 0,
                 'pending' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? pendingCount() : 0,
@@ -278,6 +280,8 @@ try {
             ]);
 
         case 'absen':
+            // Direktur (Approver Lembur) tidak absen; aplikasinya hanya untuk monitor & persetujuan lembur.
+            if (chk($k, 'Approver Lembur')) fail('Akun Direktur tidak perlu absen. Gunakan menu Monitor dan Lembur.');
             $tipe = p('tipe');
             if (!in_array($tipe, ['masuk', 'pulang'], true)) fail('Tipe absen tidak dikenal.');
             $lat = (float)p('lat'); $lng = (float)p('lng');
@@ -347,6 +351,8 @@ try {
         case 'izin':
             $jenis = p('jenis');
             if (!in_array($jenis, JENIS_CUTI, true)) fail('Jenis izin tidak dikenal.');
+            // Cuti khusus perempuan (mis. Cuti Melahirkan) tidak bisa diajukan karyawan laki-laki.
+            if (in_array($jenis, CUTI_PEREMPUAN, true) && sel($k, 'Jenis Kelamin') === 'Laki-laki') fail("$jenis hanya untuk karyawan perempuan.");
             $mulai = p('mulai');
             $selesai = trim(p('selesai'), "\" ");
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $mulai)) fail('Tanggal mulai tidak valid.');
@@ -501,7 +507,7 @@ try {
             out(['ok' => true, 'bulan' => $bln, 'label' => $label, 'mulai' => $mulai, 'akhir' => tutupBuku($y, $mo), 'rows' => $per]);
 
         case 'rekap':
-            if (!chk($k, 'Akses Rekap Absen')) fail('Anda tidak punya akses rekap.');
+            if (!chk($k, 'Akses Rekap Absen') && !chk($k, 'Approver Lembur')) fail('Anda tidak punya akses rekap.');
             $tgl = p('tgl', $today);
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl)) $tgl = $today;
             $rows = query(DS_ABSENSI, ['filter' => ['property' => 'Tanggal', 'date' => ['equals' => $tgl]], 'page_size' => 100]);
