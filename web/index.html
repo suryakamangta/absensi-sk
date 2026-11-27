@@ -76,6 +76,7 @@ nav button{position:relative}
 .lb .h{display:flex;justify-content:space-between;gap:8px}.lb .h b{font-size:15px}
 .lb .why{margin:6px 0;font-size:14px}.lb .meta{color:var(--mut);font-size:12px}
 .lb .acts2{display:flex;gap:8px;margin-top:8px}.lb .acts2 select{flex:1;padding:9px}.lb .acts2 button{flex:none;width:auto;padding:9px 14px}
+.dur{color:var(--navy);font-size:12px;font-weight:600}
 .mini{border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;color:#fff;background:var(--navy)}.mini.red{background:var(--bad)}
 .btn.red{background:var(--bad)}.btn.green{background:var(--ok)}
 .sumtb{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;font-variant-numeric:tabular-nums}.sumtb th,.sumtb td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}.sumtb th:first-child,.sumtb td:first-child{text-align:left;white-space:normal}.sumtb th{color:var(--mut);font-weight:700;font-size:11px}.sumtb tr.tot td{font-weight:800;border-top:2px solid var(--ink)}
@@ -250,7 +251,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.2'
+  VERSION: '1.4.3'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -396,6 +397,8 @@ async function loadRiwayat(silent){
 /* ---------- Lembur ---------- */
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rupiah = n => 'Rp '+Number(n||0).toLocaleString('id-ID');
+// Lama kerja dari jam masuk s/d jam pulang (lewat tengah malam dihitung +24 jam). '' jika salah satu kosong.
+function durasi(m,k){ const t=v=>{const a=/^(\d{1,2}):(\d{2})/.exec(v||''); return a?(+a[1])*60+(+a[2]):null;}; const a=t(m), b=t(k); if(a===null||b===null) return ''; let d=b-a; if(d<0) d+=1440; return `${Math.floor(d/60)} jam ${d%60} menit`; }
 function pulangAwal(x){ if(!x.k||!x.m||!x.t) return false; const d=new Date(x.t+'T00:00:00').getDay(); return d>0&&d<6&&x.k>='05:00'&&x.k<CFG.JAM_PULANG; }
 function lbTag(x){
   if(x.st==='Diajukan') return '<span class="tag warn">Lembur diajukan</span>';
@@ -557,7 +560,7 @@ async function loadRekap(){
       const tags=[]; if(x.s&&x.s!=='Hadir') tags.push(`<span class="tag blue">${x.s}</span>`);
       if(tl>0) tags.push(`<span class="tag warn">Telat ${tl}m</span>`); if(x.l&&/LUAR/i.test(x.l)) tags.push('<span class="tag bad">Luar radius</span>');
       if(pulangAwal(x)) tags.push('<span class="tag warn">Pulang awal</span>'); if(x.st) tags.push(lbTag(x));
-      return {e,html:`<div class="it"><div class="l"><b>${e.n}</b><small>${tags.join('')||'<span class="tag ok">Hadir</span>'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}</div></div>`,o:tl>0?1:0};
+      return {e,html:`<div class="it"><div class="l"><b>${e.n}</b><small>${tags.join('')||'<span class="tag ok">Hadir</span>'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}${durasi(x.m,x.k)?`<br><small class="dur">⏱ ${durasi(x.m,x.k)}</small>`:''}</div></div>`,o:tl>0?1:0};
     });
     $('rkHadir').textContent=h; $('rkTelat').textContent=t; $('rkBelum').textContent=b;
     $('rkList').innerHTML=items.length?items.map(i=>i.html).join(''):'<div class="empty">Tidak ada data.</div>';
