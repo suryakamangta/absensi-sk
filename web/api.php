@@ -24,6 +24,9 @@ const DS_ABSENSI  = '17ea2b01-5d22-823c-9fe5-0795550e1237';
 const DS_CUTI     = '5b1a2b01-5d22-82ff-838c-872b34bdae2e';
 const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit', 'Cuti Menikah', 'Cuti Melahirkan', 'Cuti Duka', 'Cuti Tanpa Gaji'];
 const LOKASI_KERJA = ['Head Office', 'Operation Office', 'WFH', 'Lapangan', 'Di Luar Kantor'];
+/** Tanggal merah / cuti bersama (dihitung lembur Weekend). Tambahkan di sini bila perlu. */
+const LIBUR = ['2026-12-24', '2026-12-25'];
+const TIPE_LEMBUR = ['Sore', 'Malam', 'Weekend'];
 
 function out(array $data, int $code = 200): void {
     http_response_code($code);
@@ -138,16 +141,7 @@ function auth(): array {
     return $k;
 }
 
-function todayRow(string $karyawanId): ?array {
-    $r = notion('POST', '/v1/data_sources/' . DS_ABSENSI . '/query', [
-        'filter' => ['and' => [
-            ['property' => 'Karyawan', 'relation' => ['contains' => $karyawanId]],
-            ['property' => 'Tanggal', 'date' => ['equals' => date('Y-m-d')]],
-        ]],
-        'page_size' => 1,
-    ]);
-    return $r['results'][0] ?? null;
-}
+function todayRow(string $karyawanId): ?array { return dayRow($karyawanId, date('Y-m-d')); }
 
 function rowOut(array $x, bool $withKaryawan = false): array {
     $o = [
@@ -158,9 +152,60 @@ function rowOut(array $x, bool $withKaryawan = false): array {
         'l'  => txt($x, 'Keterangan Lokasi'),
         'tl' => (string)(num($x, 'Terlambat (menit)') ?? ''),
         'lb' => (string)(num($x, 'Jam Lembur') ?? ''),
+        'pid' => $x['id'],
+        'st' => sel($x, 'Status Lembur'),
+        'tp' => sel($x, 'Tipe Lembur'),
+        'nm' => (string)(num($x, 'Nominal Lembur') ?? ''),
+        'kl' => txt($x, 'Keterangan Lembur'),
+        'ap' => txt($x, 'Approval Lembur'),
     ];
     if ($withKaryawan) $o['id'] = $x['properties']['Karyawan']['relation'][0]['id'] ?? '';
     return $o;
+}
+
+/* ---------------- Lembur ---------------- */
+/** Tipe lembur otomatis (pola rekap Excel): libur -> Weekend; pulang >= 20:00 atau < 05:00 -> Malam; selain itu Sore. */
+function tipeOtomatis(string $tgl, string $jamKeluar): string {
+    $dow = (int)date('N', strtotime($tgl));
+    if ($dow >= 6 || in_array($tgl, LIBUR, true)) return 'Weekend';
+    if (preg_match('/^(\d{1,2}):(\d{2})/', $jamKeluar, $m)) {
+        $min = (int)$m[1] * 60 + (int)$m[2];
+        if ($min >= 20 * 60 || $min < 5 * 60) return 'Malam';
+    }
+    return 'Sore';
+}
+/** Nominal = Upah + Uang Makan sesuai tipe, dari data karyawan. null jika tarif belum diisi. */
+function nominalLembur(string $karyawanId, string $tipe): ?float {
+    $k = notion('GET', "/v1/pages/$karyawanId");
+    $u = num($k, "Lembur $tipe Upah");
+    if ($u === null) return null;
+    return (float)$u + (float)(num($k, "Lembur $tipe Uang Makan") ?? 0);
+}
+function lemburOut(array $x): array {
+    $o = rowOut($x, true);
+    $o['nama'] = preg_replace('/\s+-\s+\d{4}-\d{2}-\d{2}$/', '', txt($x, 'Judul'));
+    return $o;
+}
+function rowAbsensi(string $pid): array {
+    try { $row = notion('GET', "/v1/pages/$pid"); } catch (NotFound $e) { fail('Data lembur tidak ditemukan.'); }
+    if (nid($row['parent']['data_source_id'] ?? '') !== nid(DS_ABSENSI)) fail('Data lembur tidak ditemukan.');
+    return $row;
+}
+function dayRow(string $karyawanId, string $tgl): ?array {
+    $r = notion('POST', '/v1/data_sources/' . DS_ABSENSI . '/query', [
+        'filter' => ['and' => [
+            ['property' => 'Karyawan', 'relation' => ['contains' => $karyawanId]],
+            ['property' => 'Tanggal', 'date' => ['equals' => $tgl]],
+        ]],
+        'page_size' => 1,
+    ]);
+    return $r['results'][0] ?? null;
+}
+function pendingCount(): int {
+    $r = notion('POST', '/v1/data_sources/' . DS_ABSENSI . '/query', [
+        'filter' => ['property' => 'Status Lembur', 'select' => ['equals' => 'Diajukan']], 'page_size' => 100,
+    ]);
+    return count($r['results'] ?? []);
 }
 
 /* ---------------- Aksi ---------------- */
@@ -194,6 +239,9 @@ try {
             out([
                 'ok' => true, 'id' => $kid, 'nama' => $nama, 'jabatan' => txt($k, 'Jabatan'),
                 'rekap' => chk($k, 'Akses Rekap Absen') ? 1 : 0,
+                'appr' => chk($k, 'Approver Lembur') ? 1 : 0,
+                'lview' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? 1 : 0,
+                'pending' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? pendingCount() : 0,
                 'today' => $today, 'now' => $now,
                 'rows' => array_map('rowOut', $r['results'] ?? []),
             ]);
@@ -239,10 +287,17 @@ try {
                 $props = ['Log Absen' => rt(($old !== '' ? "$old | " : '') . $log)];
                 if ($tipe === 'masuk') {
                     if (txt($row, 'Jam Masuk') === '') {
+                        $mins = (int)date('G') * 60 + (int)date('i');
+                        $dow = (int)date('w');
                         $props['Jam Masuk'] = rt($now);
                         $props['Lokasi Masuk'] = ['url' => $map];
+                        $props['Terlambat (menit)'] = ['number' => ($dow === 0 || $dow === 6) ? 0 : max(0, $mins - (int)($CFG['jam_masuk_menit'] ?? 480))];
+                        if (sel($row, 'Lokasi Kerja') === '') $props['Lokasi Kerja'] = ['select' => ['name' => $lk]];
+                        if (txt($row, 'Keterangan Lokasi') === '') $props['Keterangan Lokasi'] = rt($lok);
+                        $msg = "Absen MASUK tercatat pukul $now";
+                    } else {
+                        $msg = "Absen MASUK ulang tercatat pukul $now";
                     }
-                    $msg = "Absen MASUK ulang tercatat pukul $now";
                 } else {
                     $props['Jam Keluar'] = rt($now);
                     $props['Lokasi Pulang'] = ['url' => $map];
@@ -250,6 +305,12 @@ try {
                         $props['Keterangan Lokasi'] = rt(txt($row, 'Keterangan Lokasi') . ' / pulang: DI LUAR RADIUS KANTOR');
                     }
                     $msg = "Absen PULANG tercatat pukul $now";
+                    if (sel($row, 'Status Lembur') === 'Disetujui' && str_contains(txt($row, 'Approval Lembur'), 'tipe otomatis')) {
+                        $tp = tipeOtomatis($today, $now);
+                        $props['Tipe Lembur'] = ['select' => ['name' => $tp]];
+                        $nom = nominalLembur($kid, $tp);
+                        if ($nom !== null) $props['Nominal Lembur'] = ['number' => $nom];
+                    }
                 }
                 notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
             }
@@ -285,6 +346,100 @@ try {
             }
             notion('POST', '/v1/pages', ['parent' => ['type' => 'data_source_id', 'data_source_id' => DS_CUTI], 'properties' => $props]);
             out(['ok' => true, 'msg' => "Pengajuan $jenis terkirim, menunggu persetujuan."]);
+
+        case 'lembur_ajukan':
+            $tgl = p('tgl', $today);
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tgl)) fail('Tanggal tidak valid.');
+            if ($tgl > $today) fail('Lembur hanya bisa diajukan untuk hari ini atau hari yang sudah lewat.');
+            if ($tgl < date('Y-m-d', strtotime('-7 days'))) fail('Pengajuan lembur maksimal 7 hari ke belakang.');
+            $alasan = clean(p('alasan'), 300);
+            if (mb_strlen($alasan) < 5) fail('Tulis alasan / pekerjaan lembur (min. 5 huruf).');
+            $rencana = p('rencana');
+            if ($rencana !== '' && preg_match('/^\d{2}:\d{2}$/', $rencana)) $alasan .= " (rencana selesai $rencana)";
+            $props = [
+                'Status Lembur' => ['select' => ['name' => 'Diajukan']],
+                'Keterangan Lembur' => rt($alasan),
+                'Approval Lembur' => rt('Diajukan ' . date('d/m H:i') . ', menunggu persetujuan'),
+                'Tipe Lembur' => ['select' => null],
+                'Nominal Lembur' => ['number' => null],
+            ];
+            $row = dayRow($kid, $tgl);
+            if ($row) {
+                if (sel($row, 'Status Lembur') === 'Disetujui') fail('Lembur tanggal ini sudah disetujui.');
+                notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
+            } else {
+                unset($props['Tipe Lembur'], $props['Nominal Lembur']);
+                $props += [
+                    'Judul' => ['title' => [['text' => ['content' => "$nama - $tgl"]]]],
+                    'Tanggal' => ['date' => ['start' => $tgl]],
+                    'Karyawan' => ['relation' => [['id' => $kid]]],
+                    'Status Kehadiran' => ['select' => ['name' => 'Hadir']],
+                ];
+                notion('POST', '/v1/pages', ['parent' => ['type' => 'data_source_id', 'data_source_id' => DS_ABSENSI], 'properties' => $props]);
+            }
+            out(['ok' => true, 'msg' => 'Pengajuan lembur terkirim ke atasan, menunggu persetujuan.']);
+
+        case 'lembur_saya':
+            $r = notion('POST', '/v1/data_sources/' . DS_ABSENSI . '/query', [
+                'filter' => ['and' => [
+                    ['property' => 'Karyawan', 'relation' => ['contains' => $kid]],
+                    ['property' => 'Status Lembur', 'select' => ['is_not_empty' => true]],
+                ]],
+                'sorts' => [['property' => 'Tanggal', 'direction' => 'descending']],
+                'page_size' => 30,
+            ]);
+            out(['ok' => true, 'today' => $today, 'rows' => array_map('rowOut', $r['results'] ?? [])]);
+
+        case 'lembur_list':
+            // Approver Lembur (Pak Richard) bisa menyetujui; Akses Rekap Absen (HRD) hanya melihat.
+            if (!chk($k, 'Approver Lembur') && !chk($k, 'Akses Rekap Absen')) fail('Anda tidak punya akses melihat lembur.');
+            $pend = query(DS_ABSENSI, [
+                'filter' => ['property' => 'Status Lembur', 'select' => ['equals' => 'Diajukan']],
+                'sorts' => [['property' => 'Tanggal', 'direction' => 'ascending']], 'page_size' => 100,
+            ]);
+            $done = notion('POST', '/v1/data_sources/' . DS_ABSENSI . '/query', [
+                'filter' => ['and' => [
+                    ['or' => [
+                        ['property' => 'Status Lembur', 'select' => ['equals' => 'Disetujui']],
+                        ['property' => 'Status Lembur', 'select' => ['equals' => 'Ditolak']],
+                    ]],
+                    ['property' => 'Tanggal', 'date' => ['on_or_after' => date('Y-m-d', strtotime('-14 days'))]],
+                ]],
+                'sorts' => [['property' => 'Tanggal', 'direction' => 'descending']], 'page_size' => 60,
+            ]);
+            out(['ok' => true, 'me' => $kid, 'appr' => chk($k, 'Approver Lembur') ? 1 : 0, 'pending' => array_map('lemburOut', $pend), 'done' => array_map('lemburOut', $done['results'] ?? [])]);
+
+        case 'lembur_putus':
+            if (!chk($k, 'Approver Lembur')) fail('Anda tidak punya akses persetujuan lembur.');
+            $row = rowAbsensi(p('row'));
+            $owner = $row['properties']['Karyawan']['relation'][0]['id'] ?? '';
+            if (nid($owner) === nid($kid)) fail('Lembur Anda sendiri harus disetujui approver lain.');
+            $keputusan = p('keputusan');
+            $catatan = clean(p('catatan'), 150);
+            $tglRow = $row['properties']['Tanggal']['date']['start'] ?? $today;
+            $stamp = date('d/m/Y H:i');
+            if ($keputusan === 'tolak') {
+                notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => [
+                    'Status Lembur' => ['select' => ['name' => 'Ditolak']],
+                    'Nominal Lembur' => ['number' => 0],
+                    'Approval Lembur' => rt("Ditolak oleh $nama, $stamp via App" . ($catatan !== '' ? " | $catatan" : '')),
+                ]]);
+                out(['ok' => true, 'msg' => 'Lembur ditolak.']);
+            }
+            if ($keputusan !== 'setuju') fail('Keputusan tidak dikenal.');
+            $pilih = p('tipe', 'auto');
+            $auto = !in_array($pilih, TIPE_LEMBUR, true);
+            $tp = $auto ? tipeOtomatis($tglRow, txt($row, 'Jam Keluar')) : $pilih;
+            $nom = $owner ? nominalLembur($owner, $tp) : null;
+            $props = [
+                'Status Lembur' => ['select' => ['name' => 'Disetujui']],
+                'Tipe Lembur' => ['select' => ['name' => $tp]],
+                'Approval Lembur' => rt("Disetujui oleh $nama, $stamp via App" . ($auto ? ' · tipe otomatis' : '') . ($catatan !== '' ? " | $catatan" : '')),
+            ];
+            if ($nom !== null) $props['Nominal Lembur'] = ['number' => $nom];
+            notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
+            $rp = $nom !== null ? ' Rp ' . number_format($nom, 0, ',', '.') : ' (tarif lembur karyawan ini belum diisi di HRIS)';
+            out(['ok' => true, 'msg' => "Lembur disetujui: $tp$rp."]);
 
         case 'rekap':
             if (!chk($k, 'Akses Rekap Absen')) fail('Anda tidak punya akses rekap.');

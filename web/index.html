@@ -67,6 +67,14 @@ nav button.on{color:var(--navy);font-weight:700}
 .empty{color:var(--mut);text-align:center;padding:18px 0;font-size:14px}
 #toast{position:fixed;left:16px;right:16px;bottom:84px;background:var(--ink);color:#fff;padding:13px 16px;border-radius:12px;font-size:14px;z-index:50;transform:translateY(30px);opacity:0;transition:.25s;pointer-events:none}
 #toast.show{transform:none;opacity:1}#toast.ok{background:var(--ok)}#toast.err{background:var(--bad)}
+.badge{display:inline-block;min-width:16px;padding:0 4px;border-radius:9px;background:var(--bad);color:#fff;font-size:10px;line-height:16px;font-weight:700;position:absolute;top:2px;margin-left:14px}
+nav button{position:relative}
+.lb{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:10px}
+.lb .h{display:flex;justify-content:space-between;gap:8px}.lb .h b{font-size:15px}
+.lb .why{margin:6px 0;font-size:14px}.lb .meta{color:var(--mut);font-size:12px}
+.lb .acts2{display:flex;gap:8px;margin-top:8px}.lb .acts2 select{flex:1;padding:9px}.lb .acts2 button{flex:none;width:auto;padding:9px 14px}
+.btn.red{background:var(--bad)}.btn.green{background:var(--ok)}
+.sec{font-size:13px;font-weight:700;color:var(--mut);margin:14px 0 2px;text-transform:uppercase;letter-spacing:.4px}
 .sheet{position:fixed;inset:0;background:rgba(10,20,35,.5);z-index:40;display:flex;align-items:flex-end}
 .sheet .box{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
 .sheet p{margin:4px 0 10px;color:var(--mut);font-size:14px}
@@ -163,6 +171,30 @@ nav button.on{color:var(--navy);font-weight:700}
       </div>
     </div>
 
+    <!-- LEMBUR -->
+    <div id="tab-lembur" class="hidden">
+      <div class="card hidden" id="lbApprCard">
+        <h3 id="lbApprTitle">Persetujuan lembur</h3>
+        <div class="foot" id="lbApprInfo" style="text-align:left;margin:0"></div>
+        <div id="lbPending"><div class="empty">Memuat…</div></div>
+        <div class="sec">14 hari terakhir</div>
+        <div id="lbDone"></div>
+      </div>
+      <div class="card">
+        <h3>Ajukan lembur</h3>
+        <div class="row2">
+          <div><label for="lbTgl">Tanggal</label><input type="date" id="lbTgl"></div>
+          <div><label for="lbRencana">Rencana selesai (opsional)</label><input type="time" id="lbRencana"></div>
+        </div>
+        <label for="lbAlasan">Alasan / pekerjaan lembur</label>
+        <textarea id="lbAlasan" maxlength="300" placeholder="Contoh: menyelesaikan dokumen PIB AJU 2230 untuk Ultrajaya"></textarea>
+        <div class="err" id="lbErr"></div>
+        <button class="btn" id="btnLembur">Kirim ke Pak Richard</button>
+        <div class="foot">Lembur dihitung setelah disetujui Pak Richard. Jangan lupa absen pulang setelah selesai lembur.</div>
+      </div>
+      <div class="card"><h3>Pengajuan lembur saya</h3><div class="list" id="lbSaya"><div class="empty">Memuat…</div></div></div>
+    </div>
+
     <!-- REKAP -->
     <div id="tab-rekap" class="hidden">
       <div class="card">
@@ -178,6 +210,7 @@ nav button.on{color:var(--navy);font-weight:700}
     <button data-tab="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Absen</button>
     <button data-tab="riwayat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Riwayat</button>
     <button data-tab="izin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Izin</button>
+    <button data-tab="lembur" id="navLembur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2M17 3h4v4"/></svg>Lembur<span class="badge hidden" id="lbBadge">0</span></button>
     <button data-tab="rekap" id="navRekap" class="hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Rekap</button>
   </nav>
 </section>
@@ -200,7 +233,8 @@ const CFG = {
   HOOK: 'https://suryakamangta.co.id/absensi-sk/api.php',
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
-  VERSION: '1.1.0'
+  JAM_PULANG: '16:30',
+  VERSION: '1.2.0'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -336,10 +370,81 @@ async function loadRiwayat(silent){
       if (tl>0) tags.push(`<span class="tag warn">Telat ${tl}m</span>`);
       if (x.l && /LUAR/i.test(x.l)) tags.push('<span class="tag bad">Luar radius</span>');
       if (x.m && !x.k && x.t!==r.today) tags.push('<span class="tag bad">Tanpa pulang</span>');
-      if (lb>0) tags.push(`<span class="tag ok">Lembur ${lb}j</span>`);
+      if (pulangAwal(x)) tags.push(`<span class="tag warn">Pulang awal</span>`);
+      tags.push(lbTag(x));
       return `<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${tags.join('')||'&nbsp;'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}</div></div>`;
     }).join('') : '<div class="empty">Belum ada data absensi.</div>';
   }catch(e){ if(!silent) $('riwList').innerHTML=`<div class="empty">${e.message}</div>`; }
+}
+
+/* ---------- Lembur ---------- */
+const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rupiah = n => 'Rp '+Number(n||0).toLocaleString('id-ID');
+function pulangAwal(x){ if(!x.k||!x.m||!x.t) return false; const d=new Date(x.t+'T00:00:00').getDay(); return d>0&&d<6&&x.k>='05:00'&&x.k<CFG.JAM_PULANG; }
+function lbTag(x){
+  if(x.st==='Diajukan') return '<span class="tag warn">Lembur diajukan</span>';
+  if(x.st==='Disetujui') return `<span class="tag ok">Lembur ✓ ${esc(x.tp)}</span>`;
+  if(x.st==='Ditolak') return '<span class="tag bad">Lembur ditolak</span>';
+  return '';
+}
+function setBadge(n){ const b=$('lbBadge'); b.textContent=n; b.classList.toggle('hidden', !(n>0)); }
+async function kirimLembur(){
+  const err=$('lbErr'); err.textContent='';
+  const tgl=$('lbTgl').value, alasan=clean($('lbAlasan').value), rencana=$('lbRencana').value;
+  if(!tgl) return err.textContent='Isi tanggal.';
+  if(alasan.length<5) return err.textContent='Tulis alasan / pekerjaan lembur (min. 5 huruf).';
+  const btn=$('btnLembur'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Mengirim…';
+  try{
+    const r=await api({action:'lembur_ajukan', id:S.user.id, pin:S.user.pin, tgl, alasan, rencana});
+    if(!r.ok) throw new Error(r.msg||'Gagal mengirim.');
+    toast(r.msg,'ok'); $('lbAlasan').value=''; $('lbRencana').value='';
+    loadLembur();
+  }catch(e){ err.textContent=e.message; }
+  finally{ btn.disabled=false; btn.textContent='Kirim ke Pak Richard'; }
+}
+function lbCard(x, me, canAct){
+  const jam=`${x.m||'--:--'} → ${x.k||'--:--'}`;
+  const self = x.id && me && x.id.replace(/-/g,'')===me.replace(/-/g,'');
+  let act='';
+  if(x.st==='Diajukan' && canAct && !self){
+    act=`<div class="acts2"><select id="tp_${x.pid}"><option value="auto">Tipe otomatis</option><option>Sore</option><option>Malam</option><option>Weekend</option></select>
+      <button class="btn green" onclick="putusLembur('${x.pid}','setuju',this)">Setujui</button><button class="btn red" onclick="putusLembur('${x.pid}','tolak',this)">Tolak</button></div>`;
+  } else if(x.st==='Diajukan' && canAct && self){ act='<div class="meta">Lembur Anda sendiri — tidak bisa disetujui sendiri.</div>'; }
+  const nom = x.st==='Disetujui' && x.nm!=='' ? ' · '+rupiah(x.nm) : '';
+  return `<div class="lb"><div class="h"><b>${esc(x.nama)}</b>${lbTag(x)}</div>
+    <div class="meta">${fmtTgl(x.t)} · absen ${jam}${x.tp?' · '+esc(x.tp):''}${nom}</div>
+    <div class="why">${esc(x.kl)||'<i>(tanpa alasan)</i>'}</div>
+    ${x.ap && x.st!=='Diajukan'?`<div class="meta">${esc(x.ap)}</div>`:''}${act}</div>`;
+}
+async function loadLembur(){
+  $('lbSaya').innerHTML='<div class="empty">Memuat…</div>';
+  const jobs=[api({action:'lembur_saya', id:S.user.id, pin:S.user.pin})];
+  if(S.user.lview) jobs.push(api({action:'lembur_list', id:S.user.id, pin:S.user.pin}));
+  try{
+    const [a,b]=await Promise.all(jobs);
+    if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
+    const rows=(a.rows||[]).filter(x=>x&&x.t);
+    $('lbSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${fmtTgl(x.t)}</b><small>${lbTag(x)} ${esc(x.kl)}</small></div><div class="r">${x.st==='Disetujui'&&x.nm!==''?rupiah(x.nm):(x.m||'--:--')+' → '+(x.k||'--:--')}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan lembur.</div>';
+    if(b){
+      if(!b.ok) throw new Error(b.msg);
+      const canAct=!!b.appr, pend=(b.pending||[]).filter(x=>x&&x.t), done=(b.done||[]).filter(x=>x&&x.t);
+      $('lbApprCard').classList.remove('hidden');
+      $('lbApprTitle').textContent = canAct ? 'Persetujuan lembur' : 'Pengajuan lembur karyawan';
+      $('lbApprInfo').textContent = canAct ? `${pend.length} pengajuan menunggu persetujuan Anda.` : `Info HRD — ${pend.length} pengajuan menunggu persetujuan Pak Richard.`;
+      $('lbPending').innerHTML = pend.length ? pend.map(x=>lbCard(x,b.me,canAct)).join('') : '<div class="empty">Tidak ada pengajuan yang menunggu.</div>';
+      $('lbDone').innerHTML = done.length ? done.map(x=>lbCard(x,b.me,false)).join('') : '<div class="empty">Belum ada.</div>';
+      setBadge(pend.length);
+    }
+  }catch(e){ toast(e.message,'err'); }
+}
+async function putusLembur(pid, keputusan, btn){
+  const tipe = ($('tp_'+pid)||{}).value||'auto';
+  btn.disabled=true; const o=btn.textContent; btn.innerHTML='<span class="spin"></span>';
+  try{
+    const r=await api({action:'lembur_putus', id:S.user.id, pin:S.user.pin, row:pid, keputusan, tipe});
+    if(!r.ok) throw new Error(r.msg||'Gagal.');
+    toast(r.msg,'ok'); loadLembur();
+  }catch(e){ toast(e.message,'err'); btn.disabled=false; btn.textContent=o; }
 }
 
 /* ---------- Izin ---------- */
@@ -392,6 +497,7 @@ async function loadRekap(){
       if(x.m) h++; const tl=+x.tl||0; if(tl>0) t++;
       const tags=[]; if(x.s&&x.s!=='Hadir') tags.push(`<span class="tag blue">${x.s}</span>`);
       if(tl>0) tags.push(`<span class="tag warn">Telat ${tl}m</span>`); if(x.l&&/LUAR/i.test(x.l)) tags.push('<span class="tag bad">Luar radius</span>');
+      if(pulangAwal(x)) tags.push('<span class="tag warn">Pulang awal</span>'); if(x.st) tags.push(lbTag(x));
       return {e,html:`<div class="it"><div class="l"><b>${e.n}</b><small>${tags.join('')||'<span class="tag ok">Hadir</span>'}</small></div><div class="r">${x.m||'--:--'} → ${x.k||'--:--'}</div></div>`,o:tl>0?1:0};
     });
     $('rkHadir').textContent=h; $('rkTelat').textContent=t; $('rkBelum').textContent=b;
@@ -418,7 +524,7 @@ async function doLogin(){
   try{
     const r=await api({action:'login', id, pin});
     if(!r.ok) throw new Error(r.msg||'Login gagal.');
-    S.user={id, pin, nama:r.nama, jabatan:r.jabatan, rekap:!!r.rekap};
+    S.user={id, pin, nama:r.nama, jabatan:r.jabatan, rekap:!!r.rekap, appr:!!r.appr, lview:!!r.lview};
     store.set('sk_session', S.user); store.set('sk_last_id', id);
     $('inPin').value='';
     enterApp(r);
@@ -430,15 +536,17 @@ function enterApp(r){
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('uNama').textContent=S.user.nama; $('uJab').textContent=S.user.jabatan||'';
   $('navRekap').classList.toggle('hidden', !S.user.rekap);
+  setBadge(r&&r.pending||0);
   showTab('home');
   refreshLoc().catch(()=>{});
   loadRiwayat(true);
 }
 function showTab(t){
-  ['home','riwayat','izin','rekap'].forEach(x=>$('tab-'+x).classList.toggle('hidden', x!==t));
+  ['home','riwayat','izin','lembur','rekap'].forEach(x=>$('tab-'+x).classList.toggle('hidden', x!==t));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
   if(t==='riwayat') loadRiwayat();
   if(t==='rekap') loadRekap();
+  if(t==='lembur') loadLembur();
   if(t==='home' && (!S.loc || Date.now()-S.locAt>60000)) refreshLoc().catch(()=>{});
   window.scrollTo(0,0);
 }
@@ -452,10 +560,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('btnLogout').onclick=()=>logout();
   $('btnRefresh').onclick=()=>refreshLoc().catch(e=>toast(e.message,'err'));
   $('btnMasuk').onclick=()=>doAbsen('masuk'); $('btnPulang').onclick=()=>doAbsen('pulang');
-  $('btnIzin').onclick=kirimIzin; $('rkTgl').onchange=loadRekap;
+  $('btnIzin').onclick=kirimIzin; $('btnLembur').onclick=kirimLembur; $('lbTgl').value=ymd(new Date()); $('lbTgl').max=ymd(new Date()); $('rkTgl').onchange=loadRekap;
   document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
   const ses=store.get('sk_session');
-  if(ses&&ses.id&&ses.pin){ S.user=ses; enterApp({}); api({action:'login',id:ses.id,pin:ses.pin}).then(r=>{ if(r.ok){ S.user.rekap=!!r.rekap; S.user.nama=r.nama; store.set('sk_session',S.user); $('uNama').textContent=r.nama; $('navRekap').classList.toggle('hidden',!S.user.rekap);} else logout(r.msg); }).catch(()=>{}); }
+  if(ses&&ses.id&&ses.pin){ S.user=ses; enterApp({}); api({action:'login',id:ses.id,pin:ses.pin}).then(r=>{ if(r.ok){ S.user.rekap=!!r.rekap; S.user.appr=!!r.appr; S.user.lview=!!r.lview; S.user.nama=r.nama; setBadge(r.pending||0); store.set('sk_session',S.user); $('uNama').textContent=r.nama; $('navRekap').classList.toggle('hidden',!S.user.rekap);} else logout(r.msg); }).catch(()=>{}); }
   else { $('login').classList.remove('hidden'); loadKaryawan(); }
 });
 </script>
