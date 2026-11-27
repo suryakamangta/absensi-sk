@@ -22,8 +22,9 @@ const NOTION_VERSION = '2025-09-03';
 const DS_KARYAWAN = 'ff1a2b01-5d22-8337-a0d9-87310d3db010';
 const DS_ABSENSI  = '17ea2b01-5d22-823c-9fe5-0795550e1237';
 const DS_CUTI     = '5b1a2b01-5d22-82ff-838c-872b34bdae2e';
-const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit', 'Cuti Menikah', 'Cuti Melahirkan', 'Cuti Duka', 'Cuti Tanpa Gaji'];
+const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit', 'Cuti Menikah', 'Cuti Melahirkan', 'Cuti Istri Melahirkan', 'Cuti Duka', 'Cuti Tanpa Gaji'];
 const CUTI_PEREMPUAN = ['Cuti Melahirkan'];
+const CUTI_LAKI = ['Cuti Istri Melahirkan'];
 const LOKASI_KERJA = ['Head Office', 'Operation Office', 'WFH', 'Lapangan', 'Di Luar Kantor'];
 /** Tanggal merah / cuti bersama (dihitung lembur Weekend). Tambahkan di sini bila perlu. */
 const LIBUR = ['2026-12-24', '2026-12-25'];
@@ -353,6 +354,7 @@ try {
             if (!in_array($jenis, JENIS_CUTI, true)) fail('Jenis izin tidak dikenal.');
             // Cuti khusus perempuan (mis. Cuti Melahirkan) tidak bisa diajukan karyawan laki-laki.
             if (in_array($jenis, CUTI_PEREMPUAN, true) && sel($k, 'Jenis Kelamin') === 'Laki-laki') fail("$jenis hanya untuk karyawan perempuan.");
+            if (in_array($jenis, CUTI_LAKI, true) && sel($k, 'Jenis Kelamin') === 'Perempuan') fail("$jenis hanya untuk karyawan laki-laki.");
             $mulai = p('mulai');
             $selesai = trim(p('selesai'), "\" ");
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $mulai)) fail('Tanggal mulai tidak valid.');

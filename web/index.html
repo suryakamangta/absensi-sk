@@ -159,7 +159,7 @@ nav button{position:relative}
         <label for="izJenis">Jenis</label>
         <select id="izJenis">
           <option>Izin</option><option>Sakit (Surat Dokter)</option><option>Cuti Tahunan</option><option>Cuti Sakit</option>
-          <option>Cuti Menikah</option><option data-g="P">Cuti Melahirkan</option><option>Cuti Duka</option><option>Cuti Tanpa Gaji</option>
+          <option>Cuti Menikah</option><option data-g="P">Cuti Melahirkan</option><option data-g="L">Cuti Istri Melahirkan</option><option>Cuti Duka</option><option>Cuti Tanpa Gaji</option>
         </select>
         <div class="row2">
           <div><label for="izMulai">Dari tanggal</label><input type="date" id="izMulai"></div>
@@ -249,7 +249,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.0'
+  VERSION: '1.4.1'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -599,10 +599,10 @@ function applyRole(){
   $('navRekapLbl').textContent = dir ? 'Monitor' : 'Rekap';
   $('rkTitle').textContent = dir ? 'Monitor absensi karyawan' : 'Rekap kehadiran';
   $('dirLbCard').classList.toggle('hidden', !dir);
-  // Jenis cuti sesuai jenis kelamin: opsi data-g="P" (mis. Cuti Melahirkan) hanya untuk perempuan.
-  const lk=S.user.jk==='Laki-laki';
+  // Jenis cuti sesuai jenis kelamin: data-g="P" hanya perempuan (Cuti Melahirkan), data-g="L" hanya laki-laki (Cuti Istri Melahirkan).
+  const lk=S.user.jk==='Laki-laki', pr=S.user.jk==='Perempuan';
   const sel=$('izJenis'); if(!S.jenisAll) S.jenisAll=[...sel.options].map(o=>({v:o.value,g:o.dataset.g||''}));
-  const cur=sel.value; sel.innerHTML=S.jenisAll.filter(o=>!(lk&&o.g==='P')).map(o=>`<option>${o.v}</option>`).join('');
+  const cur=sel.value; sel.innerHTML=S.jenisAll.filter(o=>!(lk&&o.g==='P')&&!(pr&&o.g==='L')).map(o=>`<option>${o.v}</option>`).join('');
   if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
 }
 function showTab(t){
