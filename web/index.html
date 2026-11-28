@@ -92,6 +92,14 @@ nav button{position:relative}
 .pinrow{letter-spacing:10px;text-align:center;font-size:22px;font-weight:700}
 .foot{text-align:center;color:var(--mut);font-size:11px;margin-top:14px}
 .err{color:var(--bad);font-size:13px;margin-top:8px;min-height:18px}
+.seg{display:flex;background:var(--bg);border-radius:10px;padding:3px;margin-bottom:10px}.seg button{flex:1;border:0;background:none;padding:8px;border-radius:8px;color:var(--mut);font-weight:700}.seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.saldo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}.saldo div{background:var(--bg);border-radius:12px;padding:10px 4px}.saldo b{display:block;font-size:24px;color:var(--navy)}.saldo small{color:var(--mut);font-size:11px}
+.info{border-left:0;background:#fff8e8;border:1px solid #f3dfae;border-radius:12px;padding:10px 12px;margin-top:8px}.info b{display:block}.info p{margin:4px 0 0;font-size:14px;white-space:pre-line}.info small{color:var(--mut);font-size:11px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}.kv:last-child{border-bottom:0}.kv span{color:var(--mut)}.kv b{text-align:right;font-weight:600;word-break:break-word}.kv .mini{margin-left:6px}
+.slip{border:1px solid var(--line);border-radius:12px;margin-top:10px;overflow:hidden}.slip summary{list-style:none;cursor:pointer;padding:12px;display:flex;justify-content:space-between;gap:8px;align-items:center}.slip summary::-webkit-details-marker{display:none}.slip summary>b{white-space:nowrap}.slip .bd{padding:0 12px 12px}.slip .tot{background:var(--navy);color:#fff;border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;margin-top:8px;font-weight:800}
+.bar{height:8px;border-radius:4px;background:var(--bg);overflow:hidden;margin-top:4px}.bar i{display:block;height:100%;background:var(--ok)}
+#printArea{display:none}
+@media print{body>*:not(#printArea){display:none!important}#printArea{display:block!important;padding:24px;font:13px/1.5 system-ui,sans-serif;color:#000}#printArea table{width:100%;border-collapse:collapse}#printArea td{padding:5px 0;border-bottom:1px solid #ccc}#printArea td:last-child{text-align:right}}
 @media(min-width:600px){section{max-width:520px;margin:0 auto;box-shadow:0 0 0 1px var(--line)}nav,.sheet .box{max-width:520px;margin:0 auto}nav{left:50%;transform:translateX(-50%);width:100%}#toast{max-width:488px;margin:0 auto}}
 </style>
 </head>
@@ -107,7 +115,7 @@ nav button{position:relative}
       <h3>Masuk</h3>
       <label for="selNama">Nama karyawan</label>
       <select id="selNama"><option value="">Memuat daftar…</option></select>
-      <label for="inPin">PIN absen (4 digit)</label>
+      <label for="inPin">PIN (4–6 digit)</label>
       <input id="inPin" class="pinrow" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="••••">
       <div class="err" id="loginErr"></div>
       <button class="btn" id="btnLogin">Masuk</button>
@@ -125,6 +133,7 @@ nav button{position:relative}
   <main>
     <!-- HOME -->
     <div id="tab-home">
+      <div class="card hidden infoCard"><h3>Pengumuman</h3><div class="infoList"></div></div>
       <div class="card clock">
         <div class="t" id="clk">--:--:--</div>
         <div class="d" id="tgl">-</div>
@@ -158,7 +167,18 @@ nav button{position:relative}
 
     <!-- IZIN -->
     <div id="tab-izin" class="hidden">
-      <div class="card">
+      <div class="card hidden" id="ctApprCard">
+        <h3>Persetujuan izin &amp; cuti</h3>
+        <div id="ctPending"><div class="empty">Memuat…</div></div>
+        <div class="sec">Sudah diputuskan (30 hari)</div>
+        <div id="ctDone"></div>
+      </div>
+      <div class="card" id="ctSaldoCard">
+        <h3>Cuti tahunan <span id="ctTahun"></span></h3>
+        <div class="saldo"><div><b id="ctSisa">-</b><small>Sisa</small></div><div><b id="ctPakai">-</b><small>Terpakai</small></div><div><b id="ctJatah">-</b><small>Jatah</small></div></div>
+        <div class="foot" id="ctNote" style="text-align:left"></div>
+      </div>
+      <div class="card" id="izFormCard">
         <h3>Pengajuan izin / sakit / cuti</h3>
         <label for="izJenis">Jenis</label>
         <select id="izJenis">
@@ -175,8 +195,9 @@ nav button{position:relative}
         <input type="file" id="izFile" accept="image/*,application/pdf">
         <div class="err" id="izErr"></div>
         <button class="btn" id="btnIzin">Kirim pengajuan</button>
-        <div class="foot">Pengajuan masuk ke HRIS dengan status "Diajukan" dan menunggu persetujuan atasan/HRD.</div>
+        <div class="foot">Pengajuan masuk ke HRIS dengan status "Diajukan" dan menunggu persetujuan HRD / Pak Richard.</div>
       </div>
+      <div class="card" id="ctSayaCard"><h3>Pengajuan saya</h3><div class="list" id="ctSaya"><div class="empty">Memuat…</div></div></div>
     </div>
 
     <!-- LEMBUR -->
@@ -216,7 +237,16 @@ nav button{position:relative}
       <div class="card hidden" id="dirLbCard">
         <div class="dirLb" id="dirLbGo"><b id="dirLbN">-</b><div><div style="font-weight:700">Pengajuan lembur menunggu</div><small style="color:var(--mut)">Ketuk untuk menyetujui / menolak</small></div><span class="go">›</span></div>
       </div>
-      <div class="card">
+      <div class="card hidden infoCard"><h3>Pengumuman</h3><div class="infoList"></div></div>
+      <div class="seg"><button id="segHari" class="on">Harian</button><button id="segBulan">Bulanan</button></div>
+      <div class="card hidden" id="rbCard">
+        <h3>Rekap bulanan</h3>
+        <select id="rbBulan"></select>
+        <div class="foot" id="rbInfo" style="text-align:left;margin:6px 0 0"></div>
+        <div class="sum" style="margin-top:10px"><div><b id="rbHadir">-</b><small>Rata-rata hadir</small></div><div><b id="rbTelat">-</b><small>Kali terlambat</small></div><div><b id="rbLembur">-</b><small>Biaya lembur</small></div></div>
+        <div id="rbList"><div class="empty">Memuat…</div></div>
+      </div>
+      <div class="card" id="rhCard">
         <h3 id="rkTitle">Rekap kehadiran</h3>
         <div class="dayNav"><button id="rkPrev" aria-label="Hari sebelumnya">‹</button><input type="date" id="rkTgl"><button id="rkNext" aria-label="Hari berikutnya">›</button></div>
         <div style="height:10px"></div>
@@ -224,13 +254,59 @@ nav button{position:relative}
         <div class="list" id="rkList"><div class="empty">Memuat…</div></div>
       </div>
     </div>
+
+    <!-- AKUN -->
+    <div id="tab-akun" class="hidden">
+      <div class="card" id="gjCard">
+        <h3>Slip gaji</h3>
+        <div id="gjBody"><p style="margin:0 0 10px;color:var(--mut);font-size:14px">Demi keamanan, ketik ulang PIN untuk membuka slip gaji.</p>
+        <button class="btn" id="btnGaji">Buka slip gaji</button></div>
+      </div>
+      <div class="card">
+        <h3>Profil saya</h3>
+        <div id="pfList"><div class="empty">Memuat…</div></div>
+        <div id="pfReq"></div>
+        <div class="foot" style="text-align:left">Data salah? Tekan <b>Ubah</b>, perubahan berlaku setelah disetujui HRD.</div>
+      </div>
+      <div class="card hidden" id="remCard">
+        <label style="display:flex;align-items:center;gap:12px;margin:0;color:var(--ink);font-size:15px"><input type="checkbox" id="remOn" style="width:22px;height:22px;flex:none"><span><b>Pengingat absen masuk</b><br><small style="color:var(--mut)">Notifikasi jam 07:50 di hari kerja bila belum absen masuk.</small></span></label>
+      </div>
+      <div class="card hidden" id="remApk"><small style="color:var(--mut)">Pengingat absen jam 07:50 tersedia di aplikasi Android Absensi SK terbaru (unduh ulang APK dari HRD).</small></div>
+      <div class="card">
+        <h3>Ganti PIN</h3>
+        <p style="margin:0 0 4px;color:var(--mut);font-size:14px">Gunakan PIN 6 digit yang hanya Anda ketahui.</p>
+        <div class="row2"><div><label for="pinBaru">PIN baru</label><input id="pinBaru" class="pinrow" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></div>
+        <div><label for="pinBaru2">Ulangi PIN</label><input id="pinBaru2" class="pinrow" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></div></div>
+        <div class="err" id="pinErr"></div>
+        <button class="btn ghost" id="btnPin">Simpan PIN baru</button>
+      </div>
+      <div class="card hidden hrdOnly" id="ubCard">
+        <h3>Permintaan ubah data karyawan</h3>
+        <div id="ubPending"><div class="empty">Memuat…</div></div>
+        <div class="sec">Pengingat kontrak / dokumen</div>
+        <div id="ubIngat"></div>
+        <div class="sec">Sudah diputuskan</div>
+        <div id="ubDone"></div>
+      </div>
+      <div class="card hidden hrdOnly" id="inCard">
+        <h3>Pasang pengumuman</h3>
+        <label for="inJudul">Judul</label><input id="inJudul" maxlength="80" placeholder="Contoh: Libur Natal 25 Desember">
+        <label for="inIsi">Isi</label><textarea id="inIsi" maxlength="1000"></textarea>
+        <label for="inSampai">Tampil sampai (opsional)</label><input type="date" id="inSampai">
+        <div class="err" id="inErr"></div>
+        <button class="btn" id="btnInfo">Pasang</button>
+        <div class="sec">Pengumuman aktif</div>
+        <div id="inList"></div>
+      </div>
+    </div>
   </main>
   <nav>
     <button data-tab="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Absen</button>
     <button data-tab="riwayat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Riwayat</button>
-    <button data-tab="izin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Izin</button>
+    <button data-tab="izin" id="navIzin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span id="navIzinLbl">Izin</span><span class="badge hidden" id="ctBadge">0</span></button>
     <button data-tab="lembur" id="navLembur"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2M17 3h4v4"/></svg>Lembur<span class="badge hidden" id="lbBadge">0</span></button>
     <button data-tab="rekap" id="navRekap" class="hidden"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span id="navRekapLbl">Rekap</span></button>
+    <button data-tab="akun" id="navAkun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Akun<span class="badge hidden" id="akBadge">0</span></button>
   </nav>
 </section>
 
@@ -245,6 +321,8 @@ nav button{position:relative}
     <div class="row2"><button class="btn ghost" id="shBatal">Batal</button><button class="btn" id="shKirim">Kirim absen</button></div>
   </div>
 </div>
+<div class="sheet hidden" id="sheet2"><div class="box" id="sheet2Box"></div></div>
+<div id="printArea"></div>
 <div id="toast"></div>
 
 <script>
@@ -253,7 +331,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.4.5'
+  VERSION: '1.5.0'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -350,6 +428,7 @@ async function doAbsen(tipe){
     if (!r.ok) throw new Error(r.msg||'Absen gagal.');
     toast(r.msg, 'ok');
     if (tipe==='masuk' && $('tMasuk').textContent==='--:--') $('tMasuk').textContent=r.jam;
+    if (tipe==='masuk' && NATIVE_REM()) try{ SKNative.markMasuk(ymd(new Date())); }catch(e){}
     if (tipe==='pulang') $('tPulang').textContent=r.jam;
     loadRiwayat(true);
   }catch(e){ toast(e.message,'err'); }
@@ -383,6 +462,7 @@ async function loadRiwayat(silent){
     if (!r.ok) { if(/PIN/.test(r.msg||'')) return logout(r.msg); throw new Error(r.msg); }
     const rows=(r.rows||[]).filter(x=>x&&x.t);
     renderToday(rows, r.today);
+    if(NATIVE_REM() && rows.some(x=>x.t===r.today&&x.m)) try{ SKNative.markMasuk(r.today); }catch(e){}
     $('riwList').innerHTML = rows.length ? rows.map(x=>{
       const tl=+x.tl||0, lb=+x.lb||0, tags=[];
       if (x.s && x.s!=='Hadir') tags.push(`<span class="tag blue">${x.s}</span>`);
@@ -546,7 +626,7 @@ async function kirimIzin(){
     }
     const r=await api(p);
     if(!r.ok) throw new Error(r.msg||'Gagal mengirim.');
-    toast(r.msg,'ok'); $('izAlasan').value=''; $('izFile').value=''; $('izSelesai').value='';
+    toast(r.msg,'ok'); $('izAlasan').value=''; $('izFile').value=''; $('izSelesai').value=''; loadCuti();
   }catch(e){ err.textContent=e.message; }
   finally{ btn.disabled=false; btn.textContent='Kirim pengajuan'; }
 }
@@ -578,6 +658,229 @@ async function loadRekap(){
   }catch(e){ $('rkList').innerHTML=`<div class="empty">${e.message}</div>`; }
 }
 
+/* ---------- Sheet umum (form kecil / konfirmasi PIN) ---------- */
+function sheet2(html){ $('sheet2Box').innerHTML=html; $('sheet2').classList.remove('hidden'); }
+function closeSheet2(){ $('sheet2').classList.add('hidden'); $('sheet2Box').innerHTML=''; }
+const isAdm = () => !!(S.user && (S.user.hrd || S.user.appr));
+const tglPendek = s => { if(!s) return ''; const [y,m,d]=s.split('-').map(Number); return d+' '+BLN[m-1]+' '+y; };
+function rentang(a,b){ return !b||a===b ? tglPendek(a) : tglPendek(a)+' – '+tglPendek(b); }
+
+/* ---------- Pengingat absen 07:50 (khusus aplikasi Android versi 1.2.0+) ---------- */
+const NATIVE_REM = () => !!(window.SKNative && SKNative.setReminder);
+function syncReminder(r){
+  if(!NATIVE_REM()) return;
+  try{
+    if(r && r.libur) SKNative.setLibur((r.libur||[]).join(','));
+    const mau = !S.user.appr && store.get('sk_rem')!==false;
+    SKNative.setReminder(mau);
+    if(r && r.rows){ const t=(r.rows||[]).find(x=>x&&x.t===r.today&&x.m); if(t) SKNative.markMasuk(r.today); }
+  }catch(e){}
+}
+function remToggle(on){ store.set('sk_rem', !!on); try{ SKNative.setReminder(!!on); }catch(e){} toast(on?'Pengingat absen 07:50 dinyalakan.':'Pengingat absen dimatikan.','ok'); }
+
+/* ---------- Pengumuman ---------- */
+async function loadInfo(){
+  try{
+    const r=await api({action:'info_list', id:S.user.id, pin:S.user.pin});
+    if(!r.ok) return;
+    const rows=r.rows||[];
+    const html=rows.map(x=>`<div class="info"><b>${esc(x.judul)}</b>${x.isi?`<p>${esc(x.isi)}</p>`:''}<small>${esc(x.oleh)} · ${esc(x.at)}${x.sampai?' · sampai '+tglPendek(x.sampai):''}</small></div>`).join('');
+    document.querySelectorAll('.infoCard').forEach(c=>{ c.classList.toggle('hidden', !rows.length); c.querySelector('.infoList').innerHTML=html; });
+    if($('inList')) $('inList').innerHTML = rows.length ? rows.map(x=>`<div class="kv"><span>${esc(x.judul)}<br><small>${esc(x.at)}</small></span><b><button class="mini red" onclick="hapusInfo('${x.id}',this)">Hapus</button></b></div>`).join('') : '<div class="empty">Belum ada pengumuman.</div>';
+  }catch(e){}
+}
+async function pasangInfo(){
+  const err=$('inErr'); err.textContent='';
+  const judul=$('inJudul').value.trim(), isi=$('inIsi').value.trim(), sampai=$('inSampai').value;
+  if(judul.length<3) return err.textContent='Isi judul pengumuman.';
+  const b=$('btnInfo'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+  try{ const r=await api({action:'info_tambah', id:S.user.id, pin:S.user.pin, judul, isi, sampai}); if(!r.ok) throw new Error(r.msg);
+    toast(r.msg,'ok'); $('inJudul').value=''; $('inIsi').value=''; $('inSampai').value=''; loadInfo();
+  }catch(e){ err.textContent=e.message; } finally{ b.disabled=false; b.textContent='Pasang'; }
+}
+async function hapusInfo(iid, btn){
+  if(!btn.dataset.ok){ btn.dataset.ok='1'; btn.textContent='Yakin?'; return; }
+  btn.disabled=true;
+  try{ const r=await api({action:'info_hapus', id:S.user.id, pin:S.user.pin, iid}); if(!r.ok) throw new Error(r.msg); toast(r.msg,'ok'); loadInfo(); }catch(e){ toast(e.message,'err'); btn.disabled=false; }
+}
+
+/* ---------- Cuti: saldo, pengajuan saya, persetujuan ---------- */
+function ctTag(st){ return st==='Disetujui'?'<span class="tag ok">Disetujui</span>':st==='Ditolak'?'<span class="tag bad">Ditolak</span>':st==='Dibatalkan'?'<span class="tag">Dibatalkan</span>':'<span class="tag warn">Menunggu</span>'; }
+async function batalCuti(pid, btn){
+  if(!btn.dataset.ok){ btn.dataset.ok='1'; btn.textContent='Yakin batal?'; setTimeout(()=>{ if(btn.isConnected&&!btn.disabled){ delete btn.dataset.ok; btn.textContent='Batalkan'; } },4000); return; }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{ const r=await api({action:'cuti_batal', id:S.user.id, pin:S.user.pin, row:pid}); if(!r.ok) throw new Error(r.msg); toast(r.msg,'ok'); loadCuti(); }
+  catch(e){ toast(e.message,'err'); btn.disabled=false; delete btn.dataset.ok; btn.textContent='Batalkan'; }
+}
+function renderSaldo(sd){
+  if(!sd) return;
+  $('ctTahun').textContent=sd.tahun; $('ctSisa').textContent=sd.sisa; $('ctPakai').textContent=sd.terpakai; $('ctJatah').textContent=sd.jatah;
+  $('ctNote').textContent = !sd.berhak ? `Hak cuti tahunan berlaku setelah 12 bulan bekerja${sd.berhak_mulai?' (mulai '+tglPendek(sd.berhak_mulai)+')':''}.` : (sd.menunggu?`${sd.menunggu} hari masih menunggu persetujuan. `:'')+'Dihitung dari Cuti Tahunan yang disetujui tahun ini (hari kerja Sen–Jum).';
+}
+async function loadCuti(){
+  const dir=!!S.user.appr;
+  ['ctSaldoCard','izFormCard','ctSayaCard'].forEach(c=>$(c).classList.toggle('hidden', dir));
+  const jobs=[dir?Promise.resolve(null):api({action:'cuti_saya', id:S.user.id, pin:S.user.pin})];
+  if(isAdm()) jobs.push(api({action:'cuti_list', id:S.user.id, pin:S.user.pin}));
+  try{
+    const [a,b]=await Promise.all(jobs);
+    if(a){ if(!a.ok){ if(/PIN/.test(a.msg||'')) return logout(a.msg); throw new Error(a.msg); }
+      renderSaldo(a.saldo);
+      const rows=a.rows||[];
+      $('ctSaya').innerHTML = rows.length ? rows.map(x=>`<div class="it"><div class="l"><b>${esc(x.jenis)}</b><small>${rentang(x.mulai,x.selesai)} · ${x.hari} hari kerja${x.alasan?'<br>'+esc(x.alasan):''}</small></div><div class="r">${ctTag(x.st)}${x.st==='Diajukan'?`<br><button class="mini red" style="margin-top:6px" onclick="batalCuti('${x.pid}',this)">Batalkan</button>`:''}</div></div>`).join('') : '<div class="empty">Belum ada pengajuan.</div>';
+    }
+    if(b){ if(!b.ok) throw new Error(b.msg);
+      $('ctApprCard').classList.remove('hidden');
+      const pend=b.pending||[], me=(b.me||'').replace(/-/g,'');
+      $('ctPending').innerHTML = pend.length ? pend.map(x=>{ const self=x.id.replace(/-/g,'')===me;
+        return `<div class="lb"><div class="h"><b>${esc(x.nama)}</b>${ctTag(x.st)}</div><div class="meta">${esc(x.jenis)} · ${rentang(x.mulai,x.selesai)} · ${x.hari} hari kerja${x.lamp?' · ada lampiran (lihat di Notion)':''}</div><div class="why">${esc(x.alasan)||'<i>(tanpa alasan)</i>'}</div>
+        ${self?'<div class="meta">Pengajuan Anda sendiri — diputuskan orang lain.</div>':`<div class="acts2"><button class="btn green" onclick="putusCuti('${x.pid}','setuju',this)">Setujui</button><button class="btn red" onclick="putusCuti('${x.pid}','tolak',this)">Tolak</button></div>`}</div>`; }).join('') : '<div class="empty">Tidak ada pengajuan yang menunggu.</div>';
+      $('ctDone').innerHTML = (b.done||[]).length ? b.done.map(x=>`<div class="it"><div class="l"><b>${esc(x.nama)}</b><small>${esc(x.jenis)} · ${rentang(x.mulai,x.selesai)}</small></div><div class="r">${ctTag(x.st)}</div></div>`).join('') : '<div class="empty">Belum ada.</div>';
+      setCtBadge(pend.filter(x=>x.id.replace(/-/g,'')!==me).length);
+    }
+  }catch(e){ toast(e.message,'err'); }
+}
+function setCtBadge(n){ const b=$('ctBadge'); b.textContent=n; b.classList.toggle('hidden', !(n>0)); }
+async function putusCuti(pid, keputusan, btn){
+  btn.disabled=true; const o=btn.textContent; btn.innerHTML='<span class="spin"></span>';
+  try{ const r=await api({action:'cuti_putus', id:S.user.id, pin:S.user.pin, row:pid, keputusan}); if(!r.ok) throw new Error(r.msg); toast(r.msg,'ok'); loadCuti(); }
+  catch(e){ toast(e.message,'err'); btn.disabled=false; btn.textContent=o; }
+}
+
+/* ---------- Rekap bulanan ---------- */
+function setSeg(bulan){
+  $('segHari').classList.toggle('on',!bulan); $('segBulan').classList.toggle('on',bulan);
+  $('rhCard').classList.toggle('hidden',bulan); $('rbCard').classList.toggle('hidden',!bulan);
+  if(bulan){ if(!$('rbBulan').options.length){ const d=new Date(); const o=[]; for(let i=0;i<12;i++){ const y=d.getFullYear(), m=d.getMonth()+1; o.push(`<option value="${y}-${pad(m)}">${BLN[m-1]} ${y}</option>`); d.setMonth(d.getMonth()-1); if(y<2026||(y===2026&&m<=10)) break; } $('rbBulan').innerHTML=o.join(''); $('rbBulan').onchange=loadRekapBulan; } loadRekapBulan(); }
+}
+async function loadRekapBulan(){
+  $('rbList').innerHTML='<div class="empty">Memuat…</div>';
+  try{
+    const [r,k]=await Promise.all([api({action:'rekap_bulan', id:S.user.id, pin:S.user.pin, bulan:$('rbBulan').value}), (S.karyawan.length&&'x' in S.karyawan[0])?{ok:true,data:S.karyawan}:api({action:'karyawan'})]);
+    if(!r.ok) throw new Error(r.msg);
+    if(k.ok) S.karyawan=k.data.filter(x=>x&&x.id);
+    const by={}; (r.rows||[]).forEach(x=>by[x.id.replace(/-/g,'')]=x);
+    const hk=r.hariKerja||0;
+    $('rbInfo').textContent=`${tglPendek(r.mulai)} – ${tglPendek(r.akhir)} · ${hk} hari kerja sampai hari ini`;
+    const list=S.karyawan.filter(e=>!(+e.x)).map(e=>({e, x:by[e.id.replace(/-/g,'')]||{hadir:0,telat:0,mTelat:0,luar:0,tanpaPulang:0,izin:0,lembur:0,nLembur:0,menit:0}}));
+    let totT=0,totL=0,sumP=0; list.forEach(({x})=>{ totT+=x.telat; totL+=x.nLembur; sumP+=hk?Math.min(1,x.hadir/hk):0; });
+    $('rbHadir').textContent=list.length&&hk?Math.round(sumP/list.length*100)+'%':'-'; $('rbTelat').textContent=totT; $('rbLembur').textContent=totL?'Rp '+Math.round(totL/1000).toLocaleString('id-ID')+'rb':'0';
+    list.sort((a,b)=>b.x.telat-a.x.telat||a.e.n.localeCompare(b.e.n));
+    $('rbList').innerHTML = list.length ? list.map(({e,x})=>{ const pct=hk?Math.min(100,Math.round(x.hadir/hk*100)):0, alpa=Math.max(0,hk-x.hadir-x.izin);
+      const tags=[]; if(x.telat) tags.push(`<span class="tag warn">Telat ${x.telat}x · ${x.mTelat}m</span>`); if(x.izin) tags.push(`<span class="tag blue">Izin/sakit/cuti ${x.izin}</span>`); if(alpa) tags.push(`<span class="tag bad">Tanpa data ${alpa}</span>`); if(x.tanpaPulang) tags.push(`<span class="tag bad">Lupa pulang ${x.tanpaPulang}</span>`); if(x.luar) tags.push(`<span class="tag">Luar radius ${x.luar}</span>`); if(x.lembur) tags.push(`<span class="tag ok">Lembur ${x.lembur}x · ${rupiah(x.nLembur)}</span>`);
+      const jam=x.hadir&&x.menit?`${Math.floor(x.menit/60)} jam`:'';
+      return `<div class="lb"><div class="h"><b>${esc(e.n)}</b><span style="font-variant-numeric:tabular-nums">${x.hadir}/${hk} hari</span></div><div class="bar"><i style="width:${pct}%"></i></div><div class="meta" style="margin-top:6px">${tags.join(' ')||'<span class="tag ok">Lengkap</span>'}${jam?` · total kerja ${jam}`:''}</div></div>`; }).join('') : '<div class="empty">Tidak ada data.</div>';
+  }catch(e){ $('rbList').innerHTML=`<div class="empty">${esc(e.message)}</div>`; }
+}
+
+/* ---------- Slip gaji ---------- */
+function mintaPin(judul){
+  return new Promise(res=>{
+    sheet2(`<h3>${esc(judul)}</h3><p>Ketik PIN Anda untuk melanjutkan.</p><input id="pin2" class="pinrow" type="password" inputmode="numeric" maxlength="6" autocomplete="off"><div class="err" id="pin2Err"></div><div class="row2"><button class="btn ghost" id="p2Batal">Batal</button><button class="btn" id="p2Ok">Buka</button></div>`);
+    const ok=()=>{ const v=$('pin2').value.trim(); if(!/^\d{4,6}$/.test(v)){ $('pin2Err').textContent='PIN 4–6 digit.'; return; } closeSheet2(); res(v); };
+    $('p2Batal').onclick=()=>{ closeSheet2(); res(null); }; $('p2Ok').onclick=ok; $('pin2').onkeydown=e=>{ if(e.key==='Enter') ok(); }; setTimeout(()=>$('pin2').focus(),50);
+  });
+}
+async function bukaGaji(){
+  const pin2=await mintaPin('Buka slip gaji'); if(pin2===null) return;
+  const body=$('gjBody'); body.innerHTML='<div class="empty"><span class="spin" style="border-color:var(--line);border-top-color:var(--navy)"></span> Memuat…</div>';
+  try{
+    const r=await api({action:'gaji', id:S.user.id, pin:S.user.pin, pin2});
+    if(!r.ok) throw new Error(r.msg);
+    S.slip=r;
+    const rows=r.rows||[];
+    body.innerHTML = rows.length ? rows.map((x,i)=>{ const tot=x.items.filter(it=>it.g==='total'); const utama=tot.length?tot[tot.length-1]:null;
+      return `<details class="slip"${i===0?' open':''}><summary><div><b>${esc(x.label||tglPendek(x.tgl))}</b><br><small style="color:var(--mut)">${x.status?esc(x.status)+' · ':''}${tglPendek(x.tgl)}</small></div><b>${utama?esc(slipVal(utama)):''}</b></summary><div class="bd">${slipHtml(x)}
+        <div class="${x.files.length?'row2':''}" style="margin-top:10px">${x.files.map(f=>`<a class="btn ghost" style="text-align:center;text-decoration:none" href="${esc(f.u)}" target="_blank" rel="noopener">Unduh ${esc(f.n)}</a>`).join('')}<button class="btn ghost" onclick="cetakSlip(${i})">Simpan / cetak PDF</button></div></div></details>`; }).join('') + '<button class="btn ghost" style="margin-top:10px" onclick="tutupGaji()">Tutup slip gaji</button>'
+      : '<div class="empty">Belum ada slip gaji untuk Anda di HRIS.</div><button class="btn ghost" onclick="tutupGaji()">Tutup</button>';
+  }catch(e){ body.innerHTML=`<div class="err">${esc(e.message)}</div><button class="btn" id="btnGaji2" onclick="bukaGaji()">Coba lagi</button>`; }
+}
+const slipVal = i => i.vt!==undefined&&i.vt!=='' ? i.vt : (i.g==='info'?Number(i.v).toLocaleString('id-ID'):rupiah(i.v));
+function slipHtml(x){
+  const line=(i,bold)=>`<div class="kv"><span>${bold?'<b style="color:var(--ink)">'+esc(i.n)+'</b>':esc(i.n)}</span><b>${esc(slipVal(i))}</b></div>`;
+  const sec=(g,t,jml)=>{ const it=x.items.filter(i=>i.g===g), j=x.items.filter(i=>i.g===jml); return it.length||j.length?`<div class="sec">${t}</div>`+it.map(i=>line(i)).join('')+j.map(i=>line(i,true)).join(''):''; };
+  const tot=x.items.filter(i=>i.g==='total');
+  return sec('pendapatan','Pendapatan','jml_pendapatan')+sec('potongan','Potongan','jml_potongan')+tot.map(i=>`<div class="tot"><span>${esc(i.n)}</span><span>${esc(slipVal(i))}</span></div>`).join('')+sec('info','Keterangan')+(x.catatan?`<p class="foot" style="text-align:left">${esc(x.catatan)}</p>`:'');
+}
+function tutupGaji(){ S.slip=null; $('gjBody').innerHTML='<p style="margin:0 0 10px;color:var(--mut);font-size:14px">Demi keamanan, ketik ulang PIN untuk membuka slip gaji.</p><button class="btn" onclick="bukaGaji()">Buka slip gaji</button>'; }
+function cetakSlip(i){
+  const r=S.slip, x=r&&r.rows[i]; if(!x) return;
+  const row=(g)=>x.items.filter(it=>it.g===g||it.g==='jml_'+g).map(it=>`<tr><td>${it.g.startsWith('jml_')?'<b>'+esc(it.n)+'</b>':esc(it.n)}</td><td>${esc(slipVal(it))}</td></tr>`).join('');
+  $('printArea').innerHTML=`<h2 style="margin:0">PT. SURYA KAMANGTA</h2><div>Slip Gaji ${esc(x.label||tglPendek(x.tgl))}</div><hr><div><b>${esc(r.nama)}</b> · ${esc(r.jabatan||'')}</div>
+    <h4>Pendapatan</h4><table>${row('pendapatan')}</table><h4>Potongan</h4><table>${row('potongan')||'<tr><td>-</td><td></td></tr>'}</table>${row('info')?`<h4>Keterangan</h4><table>${row('info')}</table>`:''}
+    <table style="margin-top:12px">${x.items.filter(it=>it.g==='total').map(it=>`<tr><td><b>${esc(it.n)}</b></td><td><b>${esc(slipVal(it))}</b></td></tr>`).join('')}</table>
+    <p style="margin-top:24px;font-size:11px">${esc(x.catatan||'Dokumen rahasia.')} Dicetak dari aplikasi Absensi SK, ${new Date().toLocaleString('id-ID')}.</p>`;
+  try{ window.print(); }catch(e){ toast('Cetak tidak didukung di aplikasi ini. Buka lewat browser untuk menyimpan PDF.','err'); }
+  setTimeout(()=>$('printArea').innerHTML='',1000);
+}
+
+/* ---------- Profil & ganti PIN ---------- */
+async function loadProfil(){
+  $('pfList').innerHTML='<div class="empty">Memuat…</div>';
+  try{
+    const r=await api({action:'profil', id:S.user.id, pin:S.user.pin});
+    if(!r.ok){ if(/PIN/.test(r.msg||'')) return logout(r.msg); throw new Error(r.msg); }
+    S.pf=r.fields||[];
+    const wait=new Set((r.req||[]).filter(q=>q.st==='Diajukan').map(q=>q.field));
+    $('pfList').innerHTML=S.pf.map((f,i)=>`<div class="kv"><span>${esc(f.n)}</span><b>${(f.t==='date'&&/^\d{4}-\d{2}-\d{2}$/.test(f.v)?tglPendek(f.v):esc(f.v))||'<span style="color:var(--mut)">—</span>'}${wait.has(f.n)?' <span class="tag warn">Menunggu HRD</span>':f.e?` <button class="mini" style="background:var(--bg);color:var(--navy)" onclick="ubahData(${i})">Ubah</button>`:''}</b></div>`).join('')||'<div class="empty">Tidak ada data.</div>';
+    const done=(r.req||[]).filter(q=>q.st!=='Diajukan').slice(0,3);
+    $('pfReq').innerHTML=done.length?'<div class="sec">Permintaan terakhir</div>'+done.map(q=>`<div class="kv"><span>${esc(q.field)}: ${esc(q.baru)}</span><b>${q.st==='Disetujui'?'<span class="tag ok">Disetujui</span>':'<span class="tag bad">Ditolak</span>'}</b></div>`).join(''):'';
+    if(r.saldo) renderSaldo(r.saldo);
+  }catch(e){ $('pfList').innerHTML=`<div class="empty">${esc(e.message)}</div>`; }
+}
+function ubahData(i){
+  const f=S.pf[i]; if(!f) return;
+  const inp = f.t==='select' ? `<select id="ubVal">${f.o.map(o=>`<option ${o===f.v?'selected':''}>${esc(o)}</option>`).join('')}</select>`
+    : f.t==='date' ? `<input type="date" id="ubVal" value="${esc(f.v.slice(0,10))}">`
+    : (f.t==='rich_text'&&f.v.length>40) ? `<textarea id="ubVal" maxlength="300">${esc(f.v)}</textarea>` : `<input id="ubVal" maxlength="300" value="${esc(f.v)}" ${f.t==='number'||f.t==='phone_number'?'inputmode="numeric"':''}>`;
+  sheet2(`<h3>Ubah ${esc(f.n)}</h3><p>Data lama: ${esc(f.v)||'—'}</p><label for="ubVal">Data baru</label>${inp}<label for="ubWhy">Keterangan (opsional)</label><input id="ubWhy" maxlength="200" placeholder="Contoh: pindah alamat"><div class="err" id="ubErr"></div><div class="row2"><button class="btn ghost" onclick="closeSheet2()">Batal</button><button class="btn" id="ubKirim">Kirim ke HRD</button></div>`);
+  $('ubKirim').onclick=async()=>{ const v=$('ubVal').value.trim(); if(!v) return $('ubErr').textContent='Isi data yang baru.'; if(v===f.v) return $('ubErr').textContent='Data baru sama dengan data lama.';
+    const b=$('ubKirim'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
+    try{ const r=await api({action:'ubah_ajukan', id:S.user.id, pin:S.user.pin, field:f.n, nilai:v, alasan:$('ubWhy').value}); if(!r.ok) throw new Error(r.msg); closeSheet2(); toast(r.msg,'ok'); loadProfil(); }
+    catch(e){ $('ubErr').textContent=e.message; b.disabled=false; b.textContent='Kirim ke HRD'; } };
+}
+async function gantiPin(){
+  const err=$('pinErr'); err.textContent='';
+  const a=$('pinBaru').value.trim(), b=$('pinBaru2').value.trim();
+  if(!/^\d{6}$/.test(a)) return err.textContent='PIN baru harus 6 digit angka.';
+  if(a!==b) return err.textContent='Ulangi PIN tidak sama.';
+  const btn=$('btnPin'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  try{ const r=await api({action:'ganti_pin', id:S.user.id, pin:S.user.pin, baru:a}); if(!r.ok) throw new Error(r.msg);
+    S.user.pin=a; store.set('sk_session',S.user); $('pinBaru').value=''; $('pinBaru2').value=''; toast(r.msg,'ok');
+  }catch(e){ err.textContent=e.message; } finally{ btn.disabled=false; btn.textContent='Simpan PIN baru'; }
+}
+
+/* ---------- HRD: permintaan ubah data & pengingat ---------- */
+async function loadUbah(){
+  if(!isAdm()) return;
+  $('ubPending').innerHTML='<div class="empty">Memuat…</div>';
+  try{
+    const r=await api({action:'ubah_list', id:S.user.id, pin:S.user.pin}); if(!r.ok) throw new Error(r.msg);
+    const pend=r.pending||[];
+    $('ubPending').innerHTML=pend.length?pend.map(q=>`<div class="lb"><div class="h"><b>${esc(q.nama)}</b><small style="color:var(--mut)">${esc(q.at)}</small></div><div class="meta">${esc(q.field)}</div><div class="why">${esc(q.lama)||'—'} → <b>${esc(q.baru)}</b></div>${q.alasan?`<div class="meta">${esc(q.alasan)}</div>`:''}
+      <div class="acts2"><button class="btn green" onclick="putusUbah('${q.id}','setuju',this)">Setujui &amp; simpan ke HRIS</button><button class="btn red" onclick="putusUbah('${q.id}','tolak',this)">Tolak</button></div></div>`).join(''):'<div class="empty">Tidak ada permintaan.</div>';
+    const ig=r.ingat||[];
+    $('ubIngat').innerHTML=ig.length?ig.map(x=>`<div class="kv"><span>${esc(x.nama)}<br><small>${esc(x.kol)}</small></span><b>${x.lewat?'<span class="tag bad">Lewat</span>':'<span class="tag warn">Segera</span>'} ${tglPendek(x.tgl)}</b></div>`).join('')
+      : `<div class="empty">${(r.kolom||[]).length?'Tidak ada yang habis dalam 60 hari.':'Belum ada kolom tanggal kontrak di database Karyawan (mis. "Tanggal Akhir Kontrak").'}</div>`;
+    $('ubDone').innerHTML=(r.done||[]).length?r.done.map(q=>`<div class="kv"><span>${esc(q.nama)} · ${esc(q.field)}<br><small>${esc(q.baru)}</small></span><b>${q.st==='Disetujui'?'<span class="tag ok">Disetujui</span>':'<span class="tag bad">Ditolak</span>'}</b></div>`).join(''):'<div class="empty">Belum ada.</div>';
+    const n=pend.filter(q=>q.kid.replace(/-/g,'')!==S.user.id.replace(/-/g,'')).length; const b=$('akBadge'); b.textContent=n; b.classList.toggle('hidden',!(n>0));
+  }catch(e){ $('ubPending').innerHTML=`<div class="empty">${esc(e.message)}</div>`; }
+}
+async function putusUbah(rid, keputusan, btn){
+  btn.disabled=true; const o=btn.innerHTML; btn.innerHTML='<span class="spin"></span>';
+  try{ const r=await api({action:'ubah_putus', id:S.user.id, pin:S.user.pin, rid, keputusan}); if(!r.ok) throw new Error(r.msg); toast(r.msg,'ok'); loadUbah(); }
+  catch(e){ toast(e.message,'err'); btn.disabled=false; btn.innerHTML=o; }
+}
+function loadAkun(){
+  const dir=!!S.user.appr;
+  $('gjCard').classList.toggle('hidden', dir);
+  $('remCard').classList.toggle('hidden', dir || !NATIVE_REM()); $('remApk').classList.toggle('hidden', dir || NATIVE_REM() || !/Android/i.test(navigator.userAgent));
+  if(NATIVE_REM()){ try{ $('remOn').checked=SKNative.reminderOn(); }catch(e){} $('remOn').onchange=e=>remToggle(e.target.checked); }
+  document.querySelectorAll('.hrdOnly').forEach(c=>c.classList.toggle('hidden', !isAdm()));
+  if(!S.slip) tutupGaji();
+  loadProfil(); if(isAdm()){ loadUbah(); loadInfo(); }
+}
+
 /* ---------- Login / navigasi ---------- */
 async function loadKaryawan(){
   const sel=$('selNama');
@@ -592,24 +895,31 @@ async function loadKaryawan(){
 async function doLogin(){
   const id=$('selNama').value, pin=$('inPin').value.trim(), err=$('loginErr'); err.textContent='';
   if(!id) return err.textContent='Pilih nama Anda.';
-  if(!/^\d{4,6}$/.test(pin)) return err.textContent='PIN harus 4 digit angka.';
+  if(!/^\d{4,6}$/.test(pin)) return err.textContent='PIN harus 4–6 digit angka.';
   const b=$('btnLogin'); b.disabled=true; b.innerHTML='<span class="spin"></span>';
   try{
     const r=await api({action:'login', id, pin});
     if(!r.ok) throw new Error(r.msg||'Login gagal.');
-    S.user={id, pin, nama:r.nama, jabatan:r.jabatan, jk:r.jk||'', rekap:!!r.rekap, appr:!!r.appr, lview:!!r.lview};
+    S.user={id, pin, nama:r.nama, jabatan:r.jabatan, jk:r.jk||'', rekap:!!r.rekap, appr:!!r.appr, lview:!!r.lview, hrd:!!r.hrd};
     store.set('sk_session', S.user); store.set('sk_last_id', id);
     $('inPin').value='';
     enterApp(r);
   }catch(e){ err.textContent=e.message; }
   finally{ b.disabled=false; b.textContent='Masuk'; }
 }
-function logout(msg){ store.del('sk_session'); S.user=null; $('app').classList.add('hidden'); $('login').classList.remove('hidden'); if(!$('selNama').options.length||$('selNama').options.length<2) loadKaryawan(); if(msg) $('loginErr').textContent=msg; }
+function logout(msg){ if(NATIVE_REM()) try{ SKNative.setReminder(false); }catch(e){} store.del('sk_session'); S.user=null; S.slip=null; S.pf=null; $('app').classList.add('hidden'); $('login').classList.remove('hidden'); if(!$('selNama').options.length||$('selNama').options.length<2) loadKaryawan(); if(msg) $('loginErr').textContent=msg; }
 function enterApp(r){
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('uNama').textContent=S.user.nama; $('uJab').textContent=S.user.jabatan||'';
   setBadge(r&&r.pending||0);
   applyRole();
+  loadInfo();
+  syncReminder(r);
+  if(isAdm()) Promise.all([api({action:'cuti_list', id:S.user.id, pin:S.user.pin}), api({action:'ubah_list', id:S.user.id, pin:S.user.pin})]).then(([c,u])=>{
+    const me=S.user.id.replace(/-/g,'');
+    if(c.ok) setCtBadge((c.pending||[]).filter(x=>x.id.replace(/-/g,'')!==me).length);
+    if(u.ok){ const n=(u.pending||[]).filter(q=>q.kid.replace(/-/g,'')!==me).length; $('akBadge').textContent=n; $('akBadge').classList.toggle('hidden',!(n>0)); }
+  }).catch(()=>{});
   if(S.user.appr){ showTab('rekap'); return; }
   showTab('home');
   refreshLoc().catch(()=>{});
@@ -619,7 +929,8 @@ function enterApp(r){
 function applyRole(){
   const dir=!!S.user.appr;
   document.body.classList.toggle('dir', dir);
-  ['home','riwayat','izin'].forEach(t=>document.querySelector(`nav button[data-tab="${t}"]`).classList.toggle('hidden', dir));
+  ['home','riwayat'].forEach(t=>document.querySelector(`nav button[data-tab="${t}"]`).classList.toggle('hidden', dir));
+  $('navIzinLbl').textContent = dir ? 'Cuti' : 'Izin';
   $('navRekap').classList.toggle('hidden', !(S.user.rekap||dir));
   $('navRekapLbl').textContent = dir ? 'Monitor' : 'Rekap';
   $('rkTitle').textContent = dir ? 'Monitor absensi karyawan' : 'Rekap kehadiran';
@@ -631,10 +942,13 @@ function applyRole(){
   if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
 }
 function showTab(t){
-  ['home','riwayat','izin','lembur','rekap'].forEach(x=>$('tab-'+x).classList.toggle('hidden', x!==t));
+  ['home','riwayat','izin','lembur','rekap','akun'].forEach(x=>$('tab-'+x).classList.toggle('hidden', x!==t));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===t));
   if(t==='riwayat') loadRiwayat();
-  if(t==='rekap') loadRekap();
+  if(t==='rekap'){ if($('segBulan').classList.contains('on')) loadRekapBulan(); else loadRekap(); }
+  if(t==='izin') loadCuti();
+  if(t==='akun') loadAkun();
+  if(t==='home') loadInfo();
   if(t==='lembur') loadLembur();
   if(t==='home' && (!S.loc || Date.now()-S.locAt>60000)) refreshLoc().catch(()=>{});
   window.scrollTo(0,0);
@@ -651,10 +965,13 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('btnMasuk').onclick=()=>doAbsen('masuk'); $('btnPulang').onclick=()=>doAbsen('pulang');
   $('btnIzin').onclick=kirimIzin; $('btnLembur').onclick=kirimLembur; $('lbTgl').value=ymd(new Date()); $('lbTgl').max=ymd(new Date()); $('rkTgl').onchange=loadRekap;
   const geser=n=>{ const d=new Date(($('rkTgl').value||ymd(new Date()))+'T00:00:00'); d.setDate(d.getDate()+n); if(ymd(d)>ymd(new Date())) return; $('rkTgl').value=ymd(d); loadRekap(); };
+  $('segHari').onclick=()=>{ setSeg(false); loadRekap(); }; $('segBulan').onclick=()=>setSeg(true);
+  $('btnGaji').onclick=bukaGaji; $('btnPin').onclick=gantiPin; $('btnInfo').onclick=pasangInfo;
+  $('sheet2').onclick=e=>{ if(e.target===$('sheet2')) closeSheet2(); };
   $('rkPrev').onclick=()=>geser(-1); $('rkNext').onclick=()=>geser(1); $('dirLbGo').onclick=()=>showTab('lembur');
   document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
   const ses=store.get('sk_session');
-  if(ses&&ses.id&&ses.pin){ S.user=ses; enterApp({}); api({action:'login',id:ses.id,pin:ses.pin}).then(r=>{ if(r.ok){ const was=!!S.user.appr; S.user.rekap=!!r.rekap; S.user.appr=!!r.appr; S.user.lview=!!r.lview; S.user.nama=r.nama; S.user.jk=r.jk||''; setBadge(r.pending||0); store.set('sk_session',S.user); $('uNama').textContent=r.nama; applyRole(); if(was!==S.user.appr) enterApp(r);} else logout(r.msg); }).catch(()=>{}); }
+  if(ses&&ses.id&&ses.pin){ S.user=ses; enterApp({}); api({action:'login',id:ses.id,pin:ses.pin}).then(r=>{ if(r.ok){ const was=!!S.user.appr; S.user.rekap=!!r.rekap; S.user.appr=!!r.appr; S.user.lview=!!r.lview; S.user.hrd=!!r.hrd; S.user.nama=r.nama; S.user.jk=r.jk||''; setBadge(r.pending||0); store.set('sk_session',S.user); $('uNama').textContent=r.nama; applyRole(); syncReminder(r); if(was!==S.user.appr) enterApp(r);} else logout(r.msg); }).catch(()=>{}); }
   else { $('login').classList.remove('hidden'); loadKaryawan(); }
 });
 </script>

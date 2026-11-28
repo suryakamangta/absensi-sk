@@ -3,7 +3,8 @@
  * API Absensi SK — dipasang di cPanel: public_html/absensi-sk/api.php
  * Menghubungkan aplikasi absensi langsung ke Notion HRIS (tanpa Make).
  *
- * Aksi (POST form): karyawan | login | riwayat | absen | izin | rekap | lembur_* (ajukan, batal, saya, list, putus, ringkasan)
+ * Aksi (POST form): karyawan | login | riwayat | absen | izin | rekap | rekap_bulan | lembur_* (ajukan, batal, saya, list, putus, ringkasan)
+ *   | cuti_* (saya, list, putus) | gaji | ganti_pin | profil | ubah_* (ajukan, list, putus) | info_* (list, tambah, hapus)
  * Kunci Notion disimpan di config.php (tidak bisa dibuka dari luar, lihat .htaccess).
  */
 
@@ -28,6 +29,16 @@ const NOTION_VERSION = '2025-09-03';
 const DS_KARYAWAN = 'ff1a2b01-5d22-8337-a0d9-87310d3db010';
 const DS_ABSENSI  = '17ea2b01-5d22-823c-9fe5-0795550e1237';
 const DS_CUTI     = '5b1a2b01-5d22-82ff-838c-872b34bdae2e';
+const DS_PAYROLL  = '745a2b01-5d22-8378-b8cd-0750adb4c012';
+/** Susunan slip gaji mengikuti kolom teks "Rp ..." di database Payroll HRIS. */
+const SLIP_LAYOUT = [
+    'pendapatan' => ['Upah Pokok', 'Tunjangan Tetap', 'Tunjangan Transport', 'Lembur & Pendapatan Lain'],
+    'jml_pendapatan' => ['JUMLAH PENDAPATAN'],
+    'potongan' => ['BPJS JHT 2%', 'BPJS Jaminan Pensiun 1%', 'BPJS Kesehatan 1%', 'Pajak PPh 21', 'Potongan Ketidakhadiran', 'Potongan Lain-lain'],
+    'jml_potongan' => ['JUMLAH POTONGAN'],
+    'total' => ['GAJI BERSIH DITERIMA'],
+    'info' => ['Hari Kerja Periode', 'Hari Hadir', 'Hari Alpha', 'Total Jam Lembur', 'Status PTKP', 'Tanggal Pembayaran', 'Nomor Slip'],
+];
 const JENIS_CUTI = ['Izin', 'Sakit (Surat Dokter)', 'Cuti Tahunan', 'Cuti Sakit', 'Cuti Menikah', 'Cuti Melahirkan', 'Cuti Istri Melahirkan', 'Cuti Duka', 'Cuti Tanpa Gaji'];
 const CUTI_PEREMPUAN = ['Cuti Melahirkan'];
 const CUTI_LAKI = ['Cuti Istri Melahirkan'];
@@ -246,6 +257,177 @@ function pendingCount(): int {
     return count($r['results'] ?? []);
 }
 
+/* ---------------- Data lokal (pengumuman, permintaan ubah data, cache) di folder data/ ---------------- */
+function dataPath(string $name): string {
+    $dir = __DIR__ . '/data';
+    if (!is_dir($dir)) @mkdir($dir, 0750, true);
+    return $dir . '/' . $name;
+}
+function jget(string $name, $def = []) {
+    $f = dataPath($name);
+    if (!is_file($f)) return $def;
+    $d = json_decode((string)@file_get_contents($f), true);
+    return $d === null ? $def : $d;
+}
+function jput(string $name, $data): void {
+    $f = dataPath($name);
+    $tmp = $f . '.tmp' . getmypid();
+    @file_put_contents($tmp, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT), LOCK_EX);
+    @rename($tmp, $f);
+}
+
+/** Skema data source Notion (nama & tipe kolom), disimpan 6 jam. */
+function dsSchema(string $ds): array {
+    $key = 'schema_' . preg_replace('/[^a-f0-9]/', '', nid($ds)) . '.json';
+    $c = jget($key, null);
+    if (is_array($c) && ($c['at'] ?? 0) > time() - 21600) return $c['props'];
+    $r = notion('GET', "/v1/data_sources/$ds");
+    $props = [];
+    foreach (($r['properties'] ?? []) as $name => $p) {
+        $props[$name] = ['type' => $p['type'] ?? '', 'rel' => $p['relation']['data_source_id'] ?? ''];
+        if (($p['type'] ?? '') === 'select' || ($p['type'] ?? '') === 'status') {
+            $props[$name]['opts'] = array_map(fn($o) => $o['name'] ?? '', $p[$p['type']]['options'] ?? []);
+        }
+    }
+    jput($key, ['at' => time(), 'title' => implode('', array_map(fn($t) => $t['plain_text'] ?? '', $r['title'] ?? [])), 'props' => $props]);
+    return $props;
+}
+
+/** Nilai kolom Notion apa pun sebagai teks yang bisa dibaca. */
+function anyVal(array $p): string {
+    $t = $p['type'] ?? '';
+    $v = $p[$t] ?? null;
+    switch ($t) {
+        case 'title': case 'rich_text': return trim(implode('', array_map(fn($x) => $x['plain_text'] ?? '', $v ?? [])));
+        case 'number': return $v === null ? '' : (string)$v;
+        case 'select': case 'status': return $v['name'] ?? '';
+        case 'multi_select': return implode(', ', array_map(fn($x) => $x['name'] ?? '', $v ?? []));
+        case 'date': return $v ? (($v['start'] ?? '') . (!empty($v['end']) ? ' s/d ' . $v['end'] : '')) : '';
+        case 'email': case 'phone_number': case 'url': return (string)($v ?? '');
+        case 'checkbox': return $v ? 'Ya' : 'Tidak';
+        case 'formula':
+            $ft = $v['type'] ?? '';
+            if ($ft === 'date') return $v['date']['start'] ?? '';
+            if ($ft === 'boolean') return !empty($v['boolean']) ? 'Ya' : 'Tidak';
+            return $v[$ft] === null ? '' : (string)$v[$ft];
+        case 'rollup':
+            $rt = $v['type'] ?? '';
+            if ($rt === 'number') return $v['number'] === null ? '' : (string)$v['number'];
+            if ($rt === 'date') return $v['date']['start'] ?? '';
+            if ($rt === 'array') return implode(', ', array_filter(array_map(fn($x) => anyVal($x), $v['array'] ?? [])));
+            return '';
+        case 'unique_id': return ($v['prefix'] ?? '') . (($v['prefix'] ?? '') !== '' ? '-' : '') . ($v['number'] ?? '');
+        case 'created_time': case 'last_edited_time': return substr((string)$v, 0, 10);
+        default: return '';
+    }
+}
+/** Angka dari kolom number / formula / rollup, atau null. */
+function anyNum(array $p) {
+    $t = $p['type'] ?? '';
+    if ($t === 'number') return $p['number'];
+    if ($t === 'formula' && ($p['formula']['type'] ?? '') === 'number') return $p['formula']['number'];
+    if ($t === 'rollup' && ($p['rollup']['type'] ?? '') === 'number') return $p['rollup']['number'];
+    return null;
+}
+
+function isHrd(array $k): bool { return chk($k, 'Akses Rekap Absen'); }
+function isDir(array $k): bool { return chk($k, 'Approver Lembur'); }
+
+/* ---------------- Cuti ---------------- */
+/** Hari kerja (Sen–Jum, bukan tanggal merah) dalam rentang tanggal. */
+function hariKerja(string $a, string $b): int {
+    $n = 0;
+    for ($d = strtotime($a), $e = strtotime($b); $d <= $e; $d += 86400) {
+        if ((int)date('N', $d) <= 5 && !in_array(date('Y-m-d', $d), LIBUR, true)) $n++;
+    }
+    return $n;
+}
+function cutiOut(array $x): array {
+    $d = $x['properties']['Tanggal Cuti']['date'] ?? [];
+    $a = $d['start'] ?? ''; $b = $d['end'] ?? '' ?: $a;
+    return [
+        'pid' => $x['id'],
+        'id' => $x['properties']['Karyawan']['relation'][0]['id'] ?? '',
+        'nama' => preg_replace('/\s+-\s+.*$/', '', txt($x, 'Judul')),
+        'jenis' => sel($x, 'Jenis Cuti'),
+        'st' => sel($x, 'Status Approval'),
+        'mulai' => $a, 'selesai' => $b,
+        'hari' => $a !== '' ? hariKerja($a, $b) : 0,
+        'alasan' => txt($x, 'Alasan'),
+        'lamp' => !empty($x['properties']['Lampiran']['files']) ? 1 : 0,
+    ];
+}
+/** Jatah & sisa cuti tahunan (UU Ketenagakerjaan: 12 hari setelah 12 bulan bekerja). */
+function saldoCuti(array $k): array {
+    $th = date('Y');
+    $jatah = num($k, 'Jatah Cuti');
+    $jatah = $jatah === null ? 12 : (int)$jatah;
+    $masuk = $k['properties']['Tanggal Masuk']['date']['start'] ?? '';
+    $berhak = $masuk === '' || $masuk <= date('Y-m-d', strtotime('-12 months'));
+    $rows = query(DS_CUTI, [
+        'filter' => ['and' => [
+            ['property' => 'Karyawan', 'relation' => ['contains' => $k['id']]],
+            ['property' => 'Jenis Cuti', 'select' => ['equals' => 'Cuti Tahunan']],
+            ['property' => 'Tanggal Cuti', 'date' => ['on_or_after' => "$th-01-01"]],
+        ]],
+        'page_size' => 100,
+    ]);
+    $pakai = 0; $tunggu = 0;
+    foreach ($rows as $x) {
+        $c = cutiOut($x);
+        if ($c['mulai'] > "$th-12-31") continue;
+        if ($c['st'] === 'Disetujui') $pakai += $c['hari'];
+        elseif ($c['st'] === 'Diajukan' || $c['st'] === '') $tunggu += $c['hari'];
+    }
+    return ['tahun' => (int)$th, 'jatah' => $berhak ? $jatah : 0, 'terpakai' => $pakai, 'menunggu' => $tunggu,
+        'sisa' => max(0, ($berhak ? $jatah : 0) - $pakai), 'berhak' => $berhak ? 1 : 0,
+        'berhak_mulai' => $berhak || $masuk === '' ? '' : date('Y-m-d', strtotime($masuk . ' +12 months'))];
+}
+
+/* ---------------- Payroll / slip gaji ---------------- */
+/** Cari database Payroll di Notion (atau pakai config 'ds_payroll'). Harus punya relasi ke Karyawan. */
+function dsPayroll(): array {
+    global $CFG;
+    $c = jget('payroll_ds.json', null);
+    $want = !empty($CFG['ds_payroll']) ? $CFG['ds_payroll'] : DS_PAYROLL;
+    if ($want !== '') {
+        foreach (dsSchema($want) as $name => $s) {
+            if ($s['type'] === 'relation' && nid($s['rel']) === nid(DS_KARYAWAN)) return ['id' => $want, 'rel' => $name, 'title' => 'Payroll'];
+        }
+        throw new RuntimeException('Database Payroll (config ds_payroll) tidak punya relasi ke Karyawan.');
+    }
+    if (is_array($c) && !empty($c['id']) && ($c['at'] ?? 0) > time() - 86400) return $c;
+    $best = null;
+    foreach (['Payroll', 'Payslip', 'Gaji'] as $q) {
+        $r = notion('POST', '/v1/search', ['query' => $q, 'filter' => ['property' => 'object', 'value' => 'data_source'], 'page_size' => 20]);
+        foreach (($r['results'] ?? []) as $ds) {
+            $title = implode('', array_map(fn($t) => $t['plain_text'] ?? '', $ds['title'] ?? []));
+            if (!preg_match('/payroll|payslip|slip|gaji/i', $title)) continue;
+            $rel = '';
+            foreach (($ds['properties'] ?? []) as $name => $p) {
+                if (($p['type'] ?? '') === 'relation' && nid($p['relation']['data_source_id'] ?? '') === nid(DS_KARYAWAN)) { $rel = $name; break; }
+            }
+            if ($rel === '') continue;
+            $score = preg_match('/^payroll$/i', trim($title)) ? 3 : (preg_match('/payroll/i', $title) ? 2 : 1);
+            if (!$best || $score > $best['score']) $best = ['id' => $ds['id'], 'title' => $title, 'rel' => $rel, 'score' => $score];
+        }
+        if ($best && $best['score'] >= 2) break;
+    }
+    if (!$best) throw new RuntimeException('Database Payroll belum terhubung ke aplikasi. Hubungkan halaman Payroll ke integrasi Notion (••• → Connections).');
+    $best['at'] = time();
+    jput('payroll_ds.json', $best);
+    return $best;
+}
+/** Kelompok baris slip: potongan / total / pendapatan / info. */
+function slipGrup(string $name, ?float $v): string {
+    if (preg_match('/take\s*home|thp|gaji\s*bersih|total\s*(gaji|diterima|dibayar)|netto|diterima|total$/i', $name)) return 'total';
+    if (preg_match('/potong|pph|pinjam|kasbon|denda|cicil|iuran/i', $name)) return 'potongan';
+    if (preg_match('/bpjs|jht|jaminan|\bjp\b|kesehatan/i', $name) && !preg_match('/tunjangan/i', $name)) return 'potongan';
+    if ($v !== null && abs($v) < 1000) return 'info';
+    if (preg_match('/hari|jam|menit|kali|jumlah\s*(hari|lembur)|%|persen|rate|tarif|npwp|ptkp/i', $name)) return 'info';
+    return 'pendapatan';
+}
+
 /* ---------------- Aksi ---------------- */
 try {
     if (empty($CFG['notion_token']) || str_starts_with($CFG['notion_token'], 'ISI_')) fail('Server belum dikonfigurasi (token Notion kosong).');
@@ -279,9 +461,10 @@ try {
                 'ok' => true, 'id' => $kid, 'nama' => $nama, 'jabatan' => txt($k, 'Jabatan'), 'jk' => sel($k, 'Jenis Kelamin'),
                 'rekap' => (chk($k, 'Akses Rekap Absen') || chk($k, 'Approver Lembur')) ? 1 : 0,
                 'appr' => chk($k, 'Approver Lembur') ? 1 : 0,
+                'hrd' => chk($k, 'Akses Rekap Absen') ? 1 : 0,
                 'lview' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? 1 : 0,
                 'pending' => (chk($k, 'Approver Lembur') || chk($k, 'Akses Rekap Absen')) ? pendingCount() : 0,
-                'today' => $today, 'now' => $now,
+                'today' => $today, 'now' => $now, 'libur' => LIBUR,
                 'rows' => array_map('rowOut', $r['results'] ?? []),
             ]);
 
@@ -540,6 +723,241 @@ try {
             $rows = query(DS_ABSENSI, ['filter' => ['property' => 'Tanggal', 'date' => ['equals' => $tgl]], 'page_size' => 100]);
             out(['ok' => true, 'tgl' => $tgl, 'rows' => array_map(fn($x) => rowOut($x, true), $rows)]);
 
+        /* ---------- Cuti: saldo, pengajuan saya, persetujuan ---------- */
+        case 'cuti_saya':
+            $rows = notion('POST', '/v1/data_sources/' . DS_CUTI . '/query', [
+                'filter' => ['property' => 'Karyawan', 'relation' => ['contains' => $kid]],
+                'sorts' => [['property' => 'Tanggal Cuti', 'direction' => 'descending']],
+                'page_size' => 30,
+            ]);
+            out(['ok' => true, 'saldo' => isDir($k) ? null : saldoCuti($k), 'rows' => array_map('cutiOut', $rows['results'] ?? [])]);
+
+        case 'cuti_batal':
+            try { $row = notion('GET', '/v1/pages/' . p('row')); } catch (NotFound $e) { fail('Pengajuan tidak ditemukan.'); }
+            if (nid($row['parent']['data_source_id'] ?? '') !== nid(DS_CUTI)) fail('Pengajuan tidak ditemukan.');
+            $c = cutiOut($row);
+            if (nid($c['id']) !== nid($kid)) fail('Pengajuan ini bukan milik Anda.');
+            if ($c['st'] !== 'Diajukan' && $c['st'] !== '') fail('Pengajuan sudah diputuskan, hubungi HRD.');
+            notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => ['Status Approval' => ['select' => ['name' => 'Dibatalkan']]]]);
+            out(['ok' => true, 'msg' => "Pengajuan {$c['jenis']} dibatalkan."]);
+
+        case 'cuti_list':
+            if (!isHrd($k) && !isDir($k)) fail('Anda tidak punya akses persetujuan cuti.');
+            $pend = query(DS_CUTI, ['filter' => ['property' => 'Status Approval', 'select' => ['equals' => 'Diajukan']],
+                'sorts' => [['property' => 'Tanggal Cuti', 'direction' => 'ascending']], 'page_size' => 100]);
+            $done = notion('POST', '/v1/data_sources/' . DS_CUTI . '/query', [
+                'filter' => ['and' => [
+                    ['or' => [
+                        ['property' => 'Status Approval', 'select' => ['equals' => 'Disetujui']],
+                        ['property' => 'Status Approval', 'select' => ['equals' => 'Ditolak']],
+                    ]],
+                    ['timestamp' => 'last_edited_time', 'last_edited_time' => ['on_or_after' => date('Y-m-d', strtotime('-30 days'))]],
+                ]],
+                'sorts' => [['timestamp' => 'last_edited_time', 'direction' => 'descending']], 'page_size' => 40,
+            ]);
+            out(['ok' => true, 'me' => $kid, 'pending' => array_map('cutiOut', $pend), 'done' => array_map('cutiOut', $done['results'] ?? [])]);
+
+        case 'cuti_putus':
+            if (!isHrd($k) && !isDir($k)) fail('Anda tidak punya akses persetujuan cuti.');
+            try { $row = notion('GET', '/v1/pages/' . p('row')); } catch (NotFound $e) { fail('Pengajuan cuti tidak ditemukan.'); }
+            if (nid($row['parent']['data_source_id'] ?? '') !== nid(DS_CUTI)) fail('Pengajuan cuti tidak ditemukan.');
+            $c = cutiOut($row);
+            if (nid($c['id']) === nid($kid)) fail('Cuti Anda sendiri harus disetujui orang lain.');
+            if ($c['st'] !== 'Diajukan' && $c['st'] !== '') fail('Pengajuan ini sudah diputuskan (' . $c['st'] . ').');
+            $kep = p('keputusan');
+            if (!in_array($kep, ['setuju', 'tolak'], true)) fail('Keputusan tidak dikenal.');
+            $st = $kep === 'setuju' ? 'Disetujui' : 'Ditolak';
+            $catatan = clean(p('catatan'), 150);
+            $props = ['Status Approval' => ['select' => ['name' => $st]]];
+            $sch = dsSchema(DS_CUTI);
+            $note = "$st oleh $nama, " . date('d/m/Y H:i') . ' via App' . ($catatan !== '' ? " | $catatan" : '');
+            if (($sch['Disetujui Oleh']['type'] ?? '') === 'rich_text') {
+                $props['Disetujui Oleh'] = rt("$nama, " . date('d/m/Y H:i') . ' via App');
+                if ($catatan !== '' && ($sch['Catatan Atasan']['type'] ?? '') === 'rich_text') $props['Catatan Atasan'] = rt($catatan);
+            } else {
+                foreach (['Catatan Approval', 'Catatan Atasan', 'Catatan'] as $nm) {
+                    if (($sch[$nm]['type'] ?? '') === 'rich_text') { $props[$nm] = rt($note); break; }
+                }
+            }
+            notion('PATCH', '/v1/pages/' . $row['id'], ['properties' => $props]);
+            out(['ok' => true, 'msg' => "{$c['jenis']} {$c['nama']} $st."]);
+
+        /* ---------- Slip gaji (wajib ketik ulang PIN) ---------- */
+        case 'gaji':
+            if (!hash_equals(txt($k, 'PIN Absen'), p('pin2'))) { pinFail($kid); fail('PIN salah.'); }
+            $pd = dsPayroll();
+            $sch = dsSchema($pd['id']);
+            $rows = query($pd['id'], ['filter' => ['property' => $pd['rel'], 'relation' => ['contains' => $kid]], 'page_size' => 100]);
+            $slip = [];
+            $pakaiLayout = isset($sch['GAJI BERSIH DITERIMA']);
+            foreach ($rows as $x) {
+                if ($pakaiLayout) {
+                    $P = $x['properties'];
+                    $st = anyVal($P['Status Pembayaran'] ?? []);
+                    if (!in_array($st, ['Final', 'Dibayar'], true)) continue;
+                    $items = [];
+                    foreach (SLIP_LAYOUT as $g => $cols) foreach ($cols as $c) {
+                        if (!isset($P[$c])) continue;
+                        $vt = anyVal($P[$c]);
+                        if ($vt === '' || (in_array($g, ['pendapatan', 'potongan'], true) && preg_match('/^Rp\s*0$/', $vt))) continue;
+                        $items[] = ['n' => $c, 'g' => $g, 'vt' => $vt, 'v' => anyNum($P[$c])];
+                    }
+                    $tgl = substr(anyVal($P['Akhir Periode'] ?? []), -10) ?: (substr(anyVal($P['Tanggal Dibayar'] ?? []), 0, 10) ?: substr($x['created_time'] ?? '', 0, 10));
+                    $slip[] = ['label' => anyVal($P['Periode Gaji'] ?? []) ?: anyVal($P['Slip Payroll'] ?? []), 'tgl' => $tgl, 'status' => $st, 'items' => $items,
+                        'files' => [], 'catatan' => anyVal($P['Keterangan Slip'] ?? [])];
+                    continue;
+                }
+                $label = ''; $tgl = ''; $status = ''; $items = []; $files = [];
+                foreach ($x['properties'] as $name => $pp) {
+                    $t = $pp['type'] ?? '';
+                    if ($t === 'title') { $label = anyVal($pp); continue; }
+                    if ($t === 'date' && $tgl === '') { $tgl = $pp['date']['start'] ?? ''; continue; }
+                    if (($t === 'select' || $t === 'status') && preg_match('/status/i', $name)) { $status = anyVal($pp); continue; }
+                    if ($t === 'select' && preg_match('/periode|bulan/i', $name) && anyVal($pp) !== '') { $label = anyVal($pp) . ($label !== '' ? " · $label" : ''); continue; }
+                    if ($t === 'files') {
+                        foreach (($pp['files'] ?? []) as $f) { $u = $f['file']['url'] ?? $f['external']['url'] ?? ''; if ($u !== '') $files[] = ['n' => $f['name'] ?? 'Slip', 'u' => $u]; }
+                        continue;
+                    }
+                    $v = anyNum($pp);
+                    if ($v === null || (float)$v == 0.0) continue;
+                    $items[] = ['n' => $name, 'v' => (float)$v, 'g' => slipGrup($name, (float)$v)];
+                }
+                if (preg_match('/draft|konsep|belum/i', $status)) continue;
+                if ($tgl === '') $tgl = substr($x['created_time'] ?? '', 0, 10);
+                usort($items, fn($a, $b) => strcmp($a['g'], $b['g']) ?: strnatcasecmp($a['n'], $b['n']));
+                $slip[] = ['label' => $label, 'tgl' => $tgl, 'status' => $status, 'items' => $items, 'files' => $files];
+            }
+            usort($slip, fn($a, $b) => strcmp($b['tgl'], $a['tgl']));
+            out(['ok' => true, 'nama' => $nama, 'jabatan' => txt($k, 'Jabatan'), 'sumber' => $pd['title'] ?? 'Payroll', 'rows' => array_slice($slip, 0, 24)]);
+
+        case 'ganti_pin':
+            $baru = p('baru');
+            if (!preg_match('/^\d{6}$/', $baru)) fail('PIN baru harus 6 digit angka.');
+            if (preg_match('/^(\d)\1{5}$/', $baru) || in_array($baru, ['123456', '654321', '012345'], true)) fail('PIN terlalu mudah ditebak. Pilih angka lain.');
+            if ($baru === p('pin')) fail('PIN baru sama dengan PIN lama.');
+            $tipe = dsSchema(DS_KARYAWAN)['PIN Absen']['type'] ?? 'rich_text';
+            notion('PATCH', "/v1/pages/$kid", ['properties' => ['PIN Absen' => $tipe === 'title' ? ['title' => [['text' => ['content' => $baru]]]] : rt($baru)]]);
+            out(['ok' => true, 'msg' => 'PIN berhasil diganti. Gunakan PIN baru saat login berikutnya.']);
+
+        /* ---------- Profil karyawan & permintaan ubah data ---------- */
+        case 'profil':
+            $sch = dsSchema(DS_KARYAWAN);
+            $fields = [];
+            foreach ($sch as $name => $s) {
+                if (!profilTampil($name, $s['type'])) continue;
+                $fields[] = ['n' => $name, 'v' => isset($k['properties'][$name]) ? anyVal($k['properties'][$name]) : '', 't' => $s['type'],
+                    'e' => profilBisaUbah($name, $s['type']) ? 1 : 0, 'o' => $s['opts'] ?? []];
+            }
+            usort($fields, fn($a, $b) => profilUrut($a['n']) <=> profilUrut($b['n']) ?: strnatcasecmp($a['n'], $b['n']));
+            $req = array_values(array_filter(jget('ubah_data.json'), fn($r) => nid($r['kid']) === nid($kid)));
+            out(['ok' => true, 'fields' => $fields, 'req' => array_slice(array_reverse($req), 0, 10), 'saldo' => isDir($k) ? null : saldoCuti($k)]);
+
+        case 'ubah_ajukan':
+            $field = p('field'); $nilai = clean(p('nilai'), 300); $alasan = clean(p('alasan'), 200);
+            $sch = dsSchema(DS_KARYAWAN);
+            if (!isset($sch[$field]) || !profilTampil($field, $sch[$field]['type']) || !profilBisaUbah($field, $sch[$field]['type'])) fail('Data ini tidak bisa diubah lewat aplikasi. Hubungi HRD.');
+            if ($nilai === '') fail('Isi data yang baru.');
+            $err = cekNilai($sch[$field], $nilai); if ($err) fail($err);
+            $all = jget('ubah_data.json');
+            foreach ($all as $r) if (nid($r['kid']) === nid($kid) && $r['field'] === $field && $r['st'] === 'Diajukan') fail('Permintaan untuk data ini masih menunggu HRD.');
+            $lama = isset($k['properties'][$field]) ? anyVal($k['properties'][$field]) : '';
+            $all[] = ['id' => bin2hex(random_bytes(6)), 'kid' => $kid, 'nama' => $nama, 'field' => $field, 'lama' => $lama, 'baru' => $nilai,
+                'alasan' => $alasan, 'st' => 'Diajukan', 'at' => date('Y-m-d H:i'), 'oleh' => '', 'putus_at' => ''];
+            jput('ubah_data.json', array_slice($all, -500));
+            out(['ok' => true, 'msg' => "Permintaan ubah \"$field\" terkirim ke HRD."]);
+
+        case 'ubah_list':
+            if (!isHrd($k) && !isDir($k)) fail('Khusus HRD.');
+            $all = jget('ubah_data.json');
+            $pend = array_values(array_filter($all, fn($r) => $r['st'] === 'Diajukan'));
+            $done = array_slice(array_reverse(array_values(array_filter($all, fn($r) => $r['st'] !== 'Diajukan'))), 0, 15);
+            // Pengingat: kolom tanggal kontrak / masa berlaku di database Karyawan yang habis <= 60 hari lagi.
+            $sch = dsSchema(DS_KARYAWAN);
+            $kol = array_keys(array_filter($sch, fn($s, $n) => in_array($s['type'], ['date', 'formula'], true) && preg_match('/kontrak|berakhir|habis|berlaku|expired|masa/i', $n), ARRAY_FILTER_USE_BOTH));
+            $ingat = [];
+            if ($kol) {
+                $ks = query(DS_KARYAWAN, ['filter' => ['property' => 'Aktif', 'checkbox' => ['equals' => true]], 'page_size' => 100]);
+                $batas = date('Y-m-d', strtotime('+60 days'));
+                foreach ($ks as $x) foreach ($kol as $c) {
+                    $v = substr(anyVal($x['properties'][$c] ?? []), -10);
+                    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) && $v <= $batas && $v >= date('Y-m-d', strtotime('-30 days'))) {
+                        $ingat[] = ['nama' => txt($x, 'Nama Lengkap'), 'kol' => $c, 'tgl' => $v, 'lewat' => $v < $today ? 1 : 0];
+                    }
+                }
+                usort($ingat, fn($a, $b) => strcmp($a['tgl'], $b['tgl']));
+            }
+            out(['ok' => true, 'pending' => $pend, 'done' => $done, 'ingat' => $ingat, 'kolom' => $kol]);
+
+        case 'ubah_putus':
+            if (!isHrd($k) && !isDir($k)) fail('Khusus HRD.');
+            $all = jget('ubah_data.json'); $i = null;
+            foreach ($all as $j => $r) if ($r['id'] === p('rid')) $i = $j;
+            if ($i === null) fail('Permintaan tidak ditemukan.');
+            $r = $all[$i];
+            if ($r['st'] !== 'Diajukan') fail('Permintaan ini sudah diputuskan.');
+            if (nid($r['kid']) === nid($kid)) fail('Permintaan Anda sendiri harus diputuskan HRD lain.');
+            if (p('keputusan') === 'setuju') {
+                $sch = dsSchema(DS_KARYAWAN);
+                if (!isset($sch[$r['field']])) fail('Kolom "' . $r['field'] . '" sudah tidak ada di Notion.');
+                notion('PATCH', '/v1/pages/' . $r['kid'], ['properties' => [$r['field'] => nilaiNotion($sch[$r['field']]['type'], $r['baru'])]]);
+                $all[$i]['st'] = 'Disetujui';
+            } else $all[$i]['st'] = 'Ditolak';
+            $all[$i]['oleh'] = $nama; $all[$i]['putus_at'] = date('Y-m-d H:i');
+            jput('ubah_data.json', $all);
+            out(['ok' => true, 'msg' => "Permintaan {$r['nama']} ({$r['field']}) " . strtolower($all[$i]['st']) . '.']);
+
+        /* ---------- Pengumuman HRD ---------- */
+        case 'info_list':
+            $all = array_values(array_filter(jget('pengumuman.json'), fn($x) => ($x['sampai'] ?? '') === '' || $x['sampai'] >= $today));
+            usort($all, fn($a, $b) => strcmp($b['at'], $a['at']));
+            out(['ok' => true, 'rows' => array_slice($all, 0, 10), 'boleh' => (isHrd($k) || isDir($k)) ? 1 : 0]);
+
+        case 'info_tambah':
+            if (!isHrd($k) && !isDir($k)) fail('Khusus HRD / Direktur.');
+            $judul = clean(p('judul'), 80); $isi = trim(mb_substr(preg_replace('/[\x00-\x09\x0B-\x1F\x7F]+/u', ' ', p('isi')), 0, 1000));
+            $sampai = p('sampai');
+            if (mb_strlen($judul) < 3) fail('Isi judul pengumuman.');
+            if ($sampai !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $sampai)) fail('Tanggal tampil sampai tidak valid.');
+            $all = jget('pengumuman.json');
+            $all[] = ['id' => bin2hex(random_bytes(6)), 'judul' => $judul, 'isi' => $isi, 'sampai' => $sampai, 'oleh' => $nama, 'at' => date('Y-m-d H:i')];
+            jput('pengumuman.json', array_slice($all, -100));
+            out(['ok' => true, 'msg' => 'Pengumuman dipasang.']);
+
+        case 'info_hapus':
+            if (!isHrd($k) && !isDir($k)) fail('Khusus HRD / Direktur.');
+            jput('pengumuman.json', array_values(array_filter(jget('pengumuman.json'), fn($x) => $x['id'] !== p('iid'))));
+            out(['ok' => true, 'msg' => 'Pengumuman dihapus.']);
+
+        /* ---------- Rekap bulanan (Direktur & HRD) ---------- */
+        case 'rekap_bulan':
+            if (!isHrd($k) && !isDir($k)) fail('Anda tidak punya akses rekap.');
+            $bln = p('bulan', substr($today, 0, 7));
+            if (!preg_match('/^\d{4}-\d{2}$/', $bln)) fail('Bulan tidak valid.');
+            $a = "$bln-01"; $b = date('Y-m-t', strtotime($a));
+            $hk = $a > $today ? 0 : hariKerja($a, min($b, $today));
+            $rows = query(DS_ABSENSI, ['filter' => ['and' => [
+                ['property' => 'Tanggal', 'date' => ['on_or_after' => $a]],
+                ['property' => 'Tanggal', 'date' => ['on_or_before' => $b]],
+            ]], 'page_size' => 100]);
+            $per = [];
+            foreach ($rows as $x) {
+                $o = rowOut($x, true); $id = nid($o['id']); if ($id === '') continue;
+                $per[$id] ??= ['id' => $o['id'], 'hadir' => 0, 'telat' => 0, 'mTelat' => 0, 'luar' => 0, 'tanpaPulang' => 0, 'izin' => 0, 'lembur' => 0, 'nLembur' => 0, 'menit' => 0];
+                $q = &$per[$id];
+                if ($o['m'] !== '') {
+                    $q['hadir']++;
+                    if ((int)$o['tl'] > 0) { $q['telat']++; $q['mTelat'] += (int)$o['tl']; }
+                    if (stripos($o['l'], 'LUAR') !== false) $q['luar']++;
+                    if ($o['k'] === '' && $o['t'] < $today) $q['tanpaPulang']++;
+                    if ($o['k'] !== '' && preg_match('/^(\d{1,2}):(\d{2})/', $o['m'], $m1) && preg_match('/^(\d{1,2}):(\d{2})/', $o['k'], $m2)) {
+                        $d = ($m2[1] * 60 + $m2[2]) - ($m1[1] * 60 + $m1[2]); if ($d < 0) $d += 1440; $q['menit'] += $d;
+                    }
+                } elseif ($o['s'] !== '' && $o['s'] !== 'Hadir') $q['izin']++;
+                if ($o['st'] === 'Disetujui') { $q['lembur']++; $q['nLembur'] += (float)($o['nm'] !== '' ? $o['nm'] : 0); }
+                unset($q);
+            }
+            out(['ok' => true, 'bulan' => $bln, 'mulai' => $a, 'akhir' => $b, 'hariKerja' => $hk, 'rows' => array_values($per)]);
+
         default:
             fail('Aksi tidak dikenal.');
     }
@@ -568,4 +986,44 @@ function notionUpload(string $bin, string $fname, string $mime): string {
     @unlink($tmp);
     if ($code >= 400 || $res === false) throw new RuntimeException('Upload lampiran gagal (' . $code . ')');
     return $u['id'];
+}
+
+/* ---------------- Profil: kolom yang tampil & yang boleh diminta ubah ---------------- */
+function profilTampil(string $name, string $type): bool {
+    if (in_array($type, ['relation', 'files', 'people', 'checkbox', 'button', 'created_by', 'last_edited_by', 'created_time', 'last_edited_time', 'verification', 'unique_id'], true)) return false;
+    if (preg_match('/^(pin|lembur\s|hut\s)|pin absen|approver|akses|lembur flat|token|password|kategori ter|sisa cuti|terpakai/i', $name)) return false;
+    return true;
+}
+function profilBisaUbah(string $name, string $type): bool {
+    if (!in_array($type, ['title', 'rich_text', 'number', 'select', 'date', 'email', 'phone_number', 'url'], true)) return false;
+    return !preg_match('/jabatan|departemen|divisi|tanggal masuk|gaji|tunjangan|upah|status karyawan|kepegawaian|kontrak|jatah cuti|tarif|potongan|nominal|grade|golongan|nik karyawan|ptkp|penempatan|pola kerja|roster/i', $name);
+}
+function profilUrut(string $n): int {
+    $o = ['Nama Lengkap', 'Nama Panggilan', 'NIK Karyawan', 'Jabatan', 'Status Kepegawaian', 'Tanggal Masuk', 'Tanggal Berakhir Kontrak', 'Penempatan Proyek/Site', 'Pola Kerja/Roster',
+        'Jenis Kelamin', 'Tempat Lahir', 'Tanggal Lahir', 'NIK KTP', 'Status Perkawinan', 'Alamat KTP', 'Alamat Domisili', 'No. HP', 'Email',
+        'Nama Kontak Darurat', 'Hubungan Kontak Darurat', 'No. Kontak Darurat', 'NPWP', 'Status PTKP', 'No. BPJS Kesehatan', 'No. BPJS Ketenagakerjaan', 'Bank', 'No. Rekening', 'Atas Nama Rekening'];
+    $i = array_search($n, $o, true);
+    return $i === false ? 99 : $i;
+}
+function cekNilai(array $s, string $v): string {
+    switch ($s['type']) {
+        case 'number': return is_numeric(str_replace(['.', ','], ['', '.'], $v)) ? '' : 'Isi dengan angka.';
+        case 'date': return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? '' : 'Format tanggal tidak valid.';
+        case 'email': return filter_var($v, FILTER_VALIDATE_EMAIL) ? '' : 'Format email tidak valid.';
+        case 'url': return preg_match('#^https?://#i', $v) ? '' : 'Alamat harus diawali https://';
+        case 'select': return in_array($v, $s['opts'] ?? [], true) ? '' : 'Pilih salah satu pilihan yang tersedia.';
+        default: return '';
+    }
+}
+function nilaiNotion(string $type, string $v): array {
+    switch ($type) {
+        case 'title': return ['title' => [['text' => ['content' => $v]]]];
+        case 'number': return ['number' => (float)str_replace(['.', ','], ['', '.'], $v)];
+        case 'select': return ['select' => ['name' => $v]];
+        case 'date': return ['date' => ['start' => $v]];
+        case 'email': return ['email' => $v];
+        case 'phone_number': return ['phone_number' => $v];
+        case 'url': return ['url' => $v];
+        default: return rt($v);
+    }
 }
