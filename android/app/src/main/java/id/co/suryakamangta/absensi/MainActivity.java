@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private static final String FALLBACK_URL = "file:///android_asset/index.html";
     private static final int REQ_LOC = 11;
     private static final int REQ_FILE = 12;
+    private static final int REQ_NOTIF = 13;
     private static final long LOC_TIMEOUT_MS = 15000;
     private static final float GOOD_ACCURACY_M = 20f;
 
@@ -120,6 +121,13 @@ public class MainActivity extends Activity {
         else web.loadUrl(START_URL);
 
         if (!hasLocationPermission()) requestLocationPermission();
+        Reminder.schedule(this);
+    }
+
+    private void requestNotifPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
+        }
     }
 
     private boolean openExternal(Uri uri) {
@@ -286,6 +294,32 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+        }
+
+        /** Pengingat absen 07:50: nyala/mati (mati saat logout atau untuk akun Direktur). */
+        @JavascriptInterface
+        public void setReminder(final boolean on) {
+            Reminder.prefs(MainActivity.this).edit().putBoolean("on", on).apply();
+            Reminder.schedule(MainActivity.this);
+            if (on) main.post(new Runnable() { @Override public void run() { requestNotifPermission(); } });
+        }
+
+        /** Tanggal merah dari server, dipisah koma: 2026-12-24,2026-12-25 */
+        @JavascriptInterface
+        public void setLibur(String csv) {
+            Reminder.prefs(MainActivity.this).edit().putString("libur", csv == null ? "" : csv.replaceAll("[^0-9,-]", "")).apply();
+            Reminder.schedule(MainActivity.this);
+        }
+
+        /** Hari ini sudah absen masuk (format yyyy-MM-dd): pengingat hari ini tidak dikirim. */
+        @JavascriptInterface
+        public void markMasuk(String ymd) {
+            if (ymd != null && ymd.matches("\\d{4}-\\d{2}-\\d{2}")) Reminder.prefs(MainActivity.this).edit().putString("masuk", ymd).apply();
+        }
+
+        @JavascriptInterface
+        public boolean reminderOn() {
+            return Reminder.prefs(MainActivity.this).getBoolean("on", false);
         }
 
         @JavascriptInterface
