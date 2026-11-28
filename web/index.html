@@ -175,7 +175,7 @@ nav button{position:relative}
       </div>
       <div class="card" id="ctSaldoCard">
         <h3>Cuti tahunan <span id="ctTahun"></span></h3>
-        <div class="saldo"><div><b id="ctSisa">-</b><small>Sisa</small></div><div><b id="ctPakai">-</b><small>Terpakai</small></div><div><b id="ctJatah">-</b><small>Jatah</small></div></div>
+        <div class="saldo" style="grid-template-columns:repeat(4,1fr)"><div><b id="ctSisa">-</b><small>Sisa</small></div><div><b id="ctPakai">-</b><small>Terpakai</small></div><div><b id="ctJatah">-</b><small>Jatah</small></div><div><b id="ctCarry">-</b><small>Sisa thn lalu</small></div></div>
         <div class="foot" id="ctNote" style="text-align:left"></div>
       </div>
       <div class="card" id="izFormCard">
@@ -331,7 +331,7 @@ const CFG = {
   OFFICES: [ { name: 'Head Office', lat: -6.1153294, lng: 106.8857221, r: 50 } ],
   JAM_MASUK: '08:00',
   JAM_PULANG: '16:30',
-  VERSION: '1.5.0'
+  VERSION: '1.5.1'
 };
 const $ = id => document.getElementById(id);
 const S = { user:null, loc:null, locAt:0, karyawan:[], busy:false };
@@ -714,8 +714,8 @@ async function batalCuti(pid, btn){
 }
 function renderSaldo(sd){
   if(!sd) return;
-  $('ctTahun').textContent=sd.tahun; $('ctSisa').textContent=sd.sisa; $('ctPakai').textContent=sd.terpakai; $('ctJatah').textContent=sd.jatah;
-  $('ctNote').textContent = !sd.berhak ? `Hak cuti tahunan berlaku setelah 12 bulan bekerja${sd.berhak_mulai?' (mulai '+tglPendek(sd.berhak_mulai)+')':''}.` : (sd.menunggu?`${sd.menunggu} hari masih menunggu persetujuan. `:'')+'Dihitung dari Cuti Tahunan yang disetujui tahun ini (hari kerja Sen–Jum).';
+  $('ctTahun').textContent=sd.tahun; $('ctSisa').textContent=sd.sisa; $('ctPakai').textContent=sd.terpakai; $('ctJatah').textContent=sd.jatah; $('ctCarry').textContent=sd.carry||0;
+  $('ctNote').textContent=(sd.menunggu?`${sd.menunggu} hari masih menunggu persetujuan. `:'')+`Periode 1 Jan – 31 Des ${sd.tahun}. Sisa yang tidak diambil dibawa ke tahun berikutnya maks. ${sd.carry_max||4} hari dan tidak bisa diuangkan.`+(sd.tahun<=2026&&!sd.jatah?' Jatah 2026 sedang disesuaikan HRD.':'');
 }
 async function loadCuti(){
   const dir=!!S.user.appr;

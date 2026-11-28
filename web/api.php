@@ -357,31 +357,57 @@ function cutiOut(array $x): array {
         'lamp' => !empty($x['properties']['Lampiran']['files']) ? 1 : 0,
     ];
 }
-/** Jatah & sisa cuti tahunan (UU Ketenagakerjaan: 12 hari setelah 12 bulan bekerja). */
-function saldoCuti(array $k): array {
-    $th = date('Y');
-    $jatah = num($k, 'Jatah Cuti');
-    $jatah = $jatah === null ? 12 : (int)$jatah;
-    $masuk = $k['properties']['Tanggal Masuk']['date']['start'] ?? '';
-    $berhak = $masuk === '' || $masuk <= date('Y-m-d', strtotime('-12 months'));
+/**
+ * Cuti tahunan (aturan berlaku 1 Januari 2027): periode 1 Jan – 31 Des untuk semua karyawan, jatah 12 hari.
+ * Sisa yang tidak diambil boleh dibawa ke tahun berikutnya maksimal 4 hari (tidak bisa diuangkan).
+ * Tahun 2026: jatah 0 sampai HR mengisi kolom "Jatah Cuti 2026" di database Karyawan.
+ * Kolom "Jatah Cuti <tahun>" (angka) di Karyawan selalu mengganti jatah bawaan tahun itu.
+ */
+const CUTI_MULAI_TAHUN = 2026;
+const CUTI_JATAH = 12;
+const CUTI_CARRY_MAX = 4;
+function jatahCuti(array $k, int $y): int {
+    $v = num($k, "Jatah Cuti $y");
+    if ($v !== null) return (int)$v;
+    return $y <= 2026 ? 0 : CUTI_JATAH;
+}
+/** Hari kerja cuti tahunan per tahun (rentang yang melewati pergantian tahun dipecah). */
+function hariPerTahun(string $a, string $b): array {
+    $out = [];
+    for ($y = (int)substr($a, 0, 4); $y <= (int)substr($b, 0, 4); $y++) {
+        $s = max($a, "$y-01-01"); $e = min($b, "$y-12-31");
+        $out[$y] = hariKerja($s, $e);
+    }
+    return $out;
+}
+function saldoCuti(array $k, ?int $th = null): array {
+    $th = $th ?? (int)date('Y');
     $rows = query(DS_CUTI, [
         'filter' => ['and' => [
             ['property' => 'Karyawan', 'relation' => ['contains' => $k['id']]],
             ['property' => 'Jenis Cuti', 'select' => ['equals' => 'Cuti Tahunan']],
-            ['property' => 'Tanggal Cuti', 'date' => ['on_or_after' => "$th-01-01"]],
+            ['property' => 'Tanggal Cuti', 'date' => ['on_or_after' => CUTI_MULAI_TAHUN . '-01-01']],
         ]],
         'page_size' => 100,
     ]);
-    $pakai = 0; $tunggu = 0;
+    $pakai = []; $tunggu = [];
     foreach ($rows as $x) {
         $c = cutiOut($x);
-        if ($c['mulai'] > "$th-12-31") continue;
-        if ($c['st'] === 'Disetujui') $pakai += $c['hari'];
-        elseif ($c['st'] === 'Diajukan' || $c['st'] === '') $tunggu += $c['hari'];
+        if ($c['mulai'] === '') continue;
+        foreach (hariPerTahun($c['mulai'], $c['selesai']) as $y => $n) {
+            if ($c['st'] === 'Disetujui') $pakai[$y] = ($pakai[$y] ?? 0) + $n;
+            elseif ($c['st'] === 'Diajukan' || $c['st'] === '') $tunggu[$y] = ($tunggu[$y] ?? 0) + $n;
+        }
     }
-    return ['tahun' => (int)$th, 'jatah' => $berhak ? $jatah : 0, 'terpakai' => $pakai, 'menunggu' => $tunggu,
-        'sisa' => max(0, ($berhak ? $jatah : 0) - $pakai), 'berhak' => $berhak ? 1 : 0,
-        'berhak_mulai' => $berhak || $masuk === '' ? '' : date('Y-m-d', strtotime($masuk . ' +12 months'))];
+    $carry = 0;
+    for ($y = CUTI_MULAI_TAHUN; $y < $th; $y++) {
+        $sisaY = jatahCuti($k, $y) + $carry - ($pakai[$y] ?? 0);
+        $carry = $y + 1 >= 2027 ? min(CUTI_CARRY_MAX, max(0, $sisaY)) : 0;
+    }
+    $jatah = jatahCuti($k, $th);
+    $used = $pakai[$th] ?? 0;
+    return ['tahun' => $th, 'jatah' => $jatah, 'carry' => $carry, 'terpakai' => $used, 'menunggu' => $tunggu[$th] ?? 0,
+        'sisa' => max(0, $jatah + $carry - $used), 'carry_max' => CUTI_CARRY_MAX];
 }
 
 /* ---------------- Payroll / slip gaji ---------------- */
@@ -548,6 +574,14 @@ try {
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $mulai)) fail('Tanggal mulai tidak valid.');
             if ($selesai !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $selesai) || $selesai < $mulai)) fail('Tanggal selesai tidak valid.');
             $alasan = clean(p('alasan'), 300);
+            if ($jenis === 'Cuti Tahunan') {
+                foreach (hariPerTahun($mulai, $selesai !== '' ? $selesai : $mulai) as $y => $n) {
+                    if ($n === 0) continue;
+                    $sd = saldoCuti($k, $y);
+                    $bisa = $sd['sisa'] - $sd['menunggu'];
+                    if ($n > $bisa) fail("Sisa cuti tahunan $y tidak cukup: diajukan $n hari kerja, tersedia " . max(0, $bisa) . ' hari' . ($sd['menunggu'] ? " ({$sd['menunggu']} hari masih menunggu persetujuan)" : '') . '. Hubungi HRD bila perlu.');
+                }
+            }
             $props = [
                 'Judul' => ['title' => [['text' => ['content' => "$nama - $jenis $mulai"]]]],
                 'Karyawan' => ['relation' => [['id' => $kid]]],
@@ -991,7 +1025,7 @@ function notionUpload(string $bin, string $fname, string $mime): string {
 /* ---------------- Profil: kolom yang tampil & yang boleh diminta ubah ---------------- */
 function profilTampil(string $name, string $type): bool {
     if (in_array($type, ['relation', 'files', 'people', 'checkbox', 'button', 'created_by', 'last_edited_by', 'created_time', 'last_edited_time', 'verification', 'unique_id'], true)) return false;
-    if (preg_match('/^(pin|lembur\s|hut\s)|pin absen|approver|akses|lembur flat|token|password|kategori ter|sisa cuti|terpakai/i', $name)) return false;
+    if (preg_match('/^(pin|lembur\s|hut\s)|pin absen|approver|akses|lembur flat|token|password|kategori ter|sisa cuti|jatah cuti|terpakai/i', $name)) return false;
     return true;
 }
 function profilBisaUbah(string $name, string $type): bool {
