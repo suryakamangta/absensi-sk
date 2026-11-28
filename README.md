@@ -22,7 +22,7 @@ Notion HRIS: Karyawan · Absensi · Cuti (lampiran izin diunggah langsung ke Not
 | Izin / sakit / cuti | Masuk ke database **Cuti** dengan status *Diajukan*. Lampiran foto/PDF (maks 5 MB) langsung tersimpan di kolom Lampiran Notion. |
 | Rekap | Hanya untuk karyawan yang dicentang **Akses Rekap Absen**: daftar hadir/telat/belum absen per tanggal. |
 | Rekap bulanan | Direktur & HRD: per karyawan hadir/hari kerja, terlambat, izin, lupa pulang, lembur & biayanya. |
-| Cuti | Sisa cuti tahunan (jatah 12 hari setelah 12 bulan kerja, atau kolom **Jatah Cuti** bila ada), daftar pengajuan sendiri, dan persetujuan cuti oleh HRD (**Akses Rekap Absen**) / Direktur → kolom **Status Approval**. |
+| Cuti | Cuti tahunan per periode 1 Jan – 31 Des untuk semua karyawan (berlaku 1 Jan 2027): jatah 12 hari, sisa dibawa ke tahun berikutnya maks. 4 hari, tidak bisa diuangkan. Jatah 2026 = 0 sampai HR mengisi kolom **Jatah Cuti 2026** di Karyawan (kolom **Jatah Cuti <tahun>** selalu mengganti jatah bawaan). Pengajuan Cuti Tahunan melebihi sisa ditolak. Persetujuan oleh HRD (**Akses Rekap Absen**) / Direktur → **Status Approval**, **Disetujui Oleh**, **Catatan Atasan**; karyawan bisa membatalkan pengajuan yang masih menunggu. |
 | Slip gaji | Menu Akun, wajib ketik ulang PIN. Data dari database **Payroll** (dicari otomatis; bisa dipaksa lewat `ds_payroll` di config.php). Baris berstatus Draft tidak ditampilkan. |
 | Profil & ubah data | Karyawan melihat datanya sendiri dan meminta perubahan; HRD menyetujui → langsung tersimpan ke Notion. Pengingat kolom tanggal kontrak/masa berlaku ≤ 60 hari. Permintaan disimpan di `data/ubah_data.json`. |
 | Pengumuman | HRD/Direktur memasang pengumuman (tampil di Absen & Monitor). Disimpan di `data/pengumuman.json`. |
