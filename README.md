@@ -21,6 +21,13 @@ Notion HRIS: Karyawan · Absensi · Cuti (lampiran izin diunggah langsung ke Not
 | Riwayat | 40 hari terakhir: jam masuk/pulang, telat, luar radius, lembur. |
 | Izin / sakit / cuti | Masuk ke database **Cuti** dengan status *Diajukan*. Lampiran foto/PDF (maks 5 MB) langsung tersimpan di kolom Lampiran Notion. |
 | Rekap | Hanya untuk karyawan yang dicentang **Akses Rekap Absen**: daftar hadir/telat/belum absen per tanggal. |
+| Rekap bulanan | Direktur & HRD: per karyawan hadir/hari kerja, terlambat, izin, lupa pulang, lembur & biayanya. |
+| Cuti | Sisa cuti tahunan (jatah 12 hari setelah 12 bulan kerja, atau kolom **Jatah Cuti** bila ada), daftar pengajuan sendiri, dan persetujuan cuti oleh HRD (**Akses Rekap Absen**) / Direktur → kolom **Status Approval**. |
+| Slip gaji | Menu Akun, wajib ketik ulang PIN. Data dari database **Payroll** (dicari otomatis; bisa dipaksa lewat `ds_payroll` di config.php). Baris berstatus Draft tidak ditampilkan. |
+| Profil & ubah data | Karyawan melihat datanya sendiri dan meminta perubahan; HRD menyetujui → langsung tersimpan ke Notion. Pengingat kolom tanggal kontrak/masa berlaku ≤ 60 hari. Permintaan disimpan di `data/ubah_data.json`. |
+| Pengumuman | HRD/Direktur memasang pengumuman (tampil di Absen & Monitor). Disimpan di `data/pengumuman.json`. |
+| Ganti PIN | PIN baru 6 digit (login menerima 4–6 digit). |
+| Pengingat absen | APK 1.2.0+: notifikasi 07:50 hari kerja bila belum absen masuk (bisa dimatikan di menu Akun). |
 
 ## Pengaturan yang sering diubah
 
