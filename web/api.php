@@ -65,31 +65,77 @@ function nid(string $id): string { return strtolower(str_replace('-', '', $id));
 function notion(string $method, string $path, ?array $body = null): array {
     global $CFG;
     $base = $CFG['notion_base'] ?? 'https://api.notion.com';
-    $ch = curl_init($base . $path);
     $headers = [
         'Authorization: Bearer ' . $CFG['notion_token'],
         'Notion-Version: ' . NOTION_VERSION,
         'Content-Type: application/json',
     ];
-    curl_setopt_array($ch, [
-        CURLOPT_CUSTOMREQUEST => $method,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_TIMEOUT => 30,
-    ]);
-    if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
-    $res = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
+    // Aman diulang bila gagal di tengah jalan: baca halaman & query. Tulis hanya diulang untuk 429 (belum diproses Notion).
+    $idempotent = $method === 'GET' || str_ends_with($path, '/query');
+    $maxTry = 4;
+    for ($try = 1; ; $try++) {
+        $ch = curl_init($base . $path);
+        $retryAfter = 0;
+        curl_setopt_array($ch, [
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HEADERFUNCTION => function ($c, $h) use (&$retryAfter) {
+                if (stripos($h, 'Retry-After:') === 0) $retryAfter = (float)trim(substr($h, 12));
+                return strlen($h);
+            },
+        ]);
+        if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
+        $res = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        $busy = $code === 429 || ($idempotent && ($res === false || in_array($code, [500, 502, 503, 504], true)));
+        if ($busy && $try < $maxTry) {
+            // Tunggu sesuai Retry-After (maks 4 dtk), atau 0,5 / 1 / 2 dtk + acak kecil.
+            $wait = $retryAfter > 0 ? min($retryAfter, 4.0) : 0.5 * (2 ** ($try - 1));
+            usleep((int)(($wait + mt_rand(0, 300) / 1000) * 1e6));
+            continue;
+        }
+        break;
+    }
     if ($res === false) throw new RuntimeException('Tidak bisa terhubung ke Notion: ' . $err);
     $j = json_decode($res, true) ?: [];
+    if ($code === 429) throw new NotionBusy('Server sedang sibuk karena banyak yang absen bersamaan. Tunggu beberapa detik, lalu coba lagi.');
     if ($code >= 400) {
         if ($code === 404) throw new NotFound($j['message'] ?? 'not found');
         throw new RuntimeException('Notion ' . $code . ': ' . ($j['message'] ?? $res));
     }
+    // Data karyawan berubah lewat aplikasi -> buang cache-nya.
+    if ($method === 'PATCH' && preg_match('#^/v1/pages/([0-9a-fA-F-]{32,36})$#', $path, $m)) cacheDropPage($m[1]);
     return $j;
 }
+
+/* ---------------- Cache singkat (mengurangi panggilan ke Notion) ---------------- */
+const CACHE_KARYAWAN_DTK = 300; // daftar nama di layar login
+const CACHE_AKUN_DTK = 60;      // data akun untuk cek PIN tiap aksi
+function cacheFile(string $key): string {
+    $dir = __DIR__ . '/data/cache';
+    if (!is_dir($dir)) @mkdir($dir, 0750, true);
+    return $dir . '/' . preg_replace('/[^a-z0-9_]/', '', strtolower($key)) . '.json';
+}
+function cacheGet(string $key, int $ttl) {
+    $f = cacheFile($key);
+    if (!is_file($f) || time() - (int)@filemtime($f) > $ttl) return null;
+    $d = json_decode((string)@file_get_contents($f), true);
+    return is_array($d) ? $d : null;
+}
+function cachePut(string $key, array $data): void {
+    $f = cacheFile($key);
+    $tmp = $f . '.tmp' . getmypid();
+    if (@file_put_contents($tmp, json_encode($data, JSON_UNESCAPED_UNICODE)) !== false) @rename($tmp, $f);
+}
+function cacheDropPage(string $id): void {
+    $f = cacheFile('pg_' . nid($id));
+    if (is_file($f)) { @unlink($f); @unlink(cacheFile('karyawan')); }
+}
 class NotFound extends RuntimeException {}
+class NotionBusy extends RuntimeException {}
 
 function query(string $ds, array $body): array {
     $all = [];
@@ -147,6 +193,10 @@ function auth(): array {
     if (!preg_match('/^[0-9a-fA-F-]{32,36}$/', $id)) fail('Akun tidak ditemukan.');
     if (!preg_match('/^\d{4,6}$/', $pin)) fail('PIN salah atau akun tidak aktif.');
     if (pinLocked($id)) fail('Terlalu banyak PIN salah. Coba lagi 15 menit lagi.');
+    // Pakai cache 60 dtk hanya bila PIN & status cocok; selain itu selalu ambil data terbaru dari Notion
+    // (agar PIN baru dari HRD atau karyawan yang dinonaktifkan langsung berlaku).
+    $k = cacheGet('pg_' . nid($id), CACHE_AKUN_DTK);
+    if ($k && hash_equals(txt($k, 'PIN Absen'), $pin) && chk($k, 'Aktif')) { pinOk($id); return $k; }
     try { $k = notion('GET', "/v1/pages/$id"); }
     catch (NotFound $e) { fail('Akun tidak ditemukan.'); }
     $parent = nid($k['parent']['data_source_id'] ?? '');
@@ -157,6 +207,7 @@ function auth(): array {
         fail('PIN salah atau akun tidak aktif.');
     }
     pinOk($id);
+    cachePut('pg_' . nid($id), $k);
     return $k;
 }
 
@@ -460,13 +511,17 @@ try {
     $action = p('action');
 
     if ($action === 'karyawan') {
+        $list = cacheGet('karyawan', CACHE_KARYAWAN_DTK);
+        if ($list !== null) out(['ok' => true, 'data' => $list]);
         $rows = query(DS_KARYAWAN, [
             'filter' => ['property' => 'Aktif', 'checkbox' => ['equals' => true]],
             'sorts' => [['property' => 'Nama Lengkap', 'direction' => 'ascending']],
             'page_size' => 100,
         ]);
         // 'x' = 1 untuk Direktur/Approver Lembur: tidak wajib absen, tidak dihitung "belum absen" di monitor.
-        out(['ok' => true, 'data' => array_map(fn($k) => ['id' => $k['id'], 'n' => txt($k, 'Nama Lengkap'), 'j' => txt($k, 'Jabatan'), 'x' => chk($k, 'Approver Lembur') ? 1 : 0], $rows)]);
+        $list = array_map(fn($k) => ['id' => $k['id'], 'n' => txt($k, 'Nama Lengkap'), 'j' => txt($k, 'Jabatan'), 'x' => chk($k, 'Approver Lembur') ? 1 : 0], $rows);
+        cachePut('karyawan', $list);
+        out(['ok' => true, 'data' => $list]);
     }
 
     $k = auth();
@@ -995,6 +1050,9 @@ try {
         default:
             fail('Aksi tidak dikenal.');
     }
+} catch (NotionBusy $e) {
+    error_log('[absensi-sk] 429 ' . p('action'));
+    fail($e->getMessage());
 } catch (Throwable $e) {
     error_log('[absensi-sk] ' . $e->getMessage());
     fail('Server sedang bermasalah, coba lagi. (' . mb_substr($e->getMessage(), 0, 120) . ')');
